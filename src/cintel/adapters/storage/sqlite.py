@@ -9,11 +9,13 @@ from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.errors import StorageError
 from cintel.domain.models import (
     AnalysisCapability,
-    CapabilityStatus,
+    FileKind,
+    GeneratedReportMetadata,
     Repository,
+    RepositoryFile,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SQLiteAnalysisStorage:
@@ -39,6 +41,9 @@ class SQLiteAnalysisStorage:
                 )
             if current < 1:
                 self._migrate_to_v1(connection)
+                current = 1
+            if current < 2:
+                self._migrate_to_v2(connection)
             connection.commit()
         except sqlite3.Error as exc:
             raise StorageError(f"Unable to initialize {self._database_path}: {exc}") from exc
@@ -77,6 +82,76 @@ class SQLiteAnalysisStorage:
             name=row[2],
             created_at=datetime.fromisoformat(row[3]),
         )
+
+    def list_repository_files(self, repository_id: str) -> tuple[RepositoryFile, ...]:
+        rows = self._connect().execute(
+            """
+            SELECT id, repository_id, relative_path, absolute_path, kind, size,
+                   modified_at, content_sha256
+            FROM repository_files
+            WHERE repository_id = ?
+            ORDER BY relative_path
+            """,
+            (repository_id,),
+        ).fetchall()
+        return tuple(
+            RepositoryFile(
+                id=row[0],
+                repository_id=row[1],
+                relative_path=row[2],
+                absolute_path=row[3],
+                kind=FileKind(row[4]),
+                size=row[5],
+                modified_at=datetime.fromisoformat(row[6]),
+                content_sha256=row[7],
+            )
+            for row in rows
+        )
+
+    def replace_repository_files(
+        self, repository_id: str, files: tuple[RepositoryFile, ...]
+    ) -> None:
+        connection = self._connect()
+        incoming_ids = {item.id for item in files}
+        existing_ids = {
+            row[0]
+            for row in connection.execute(
+                "SELECT id FROM repository_files WHERE repository_id = ?",
+                (repository_id,),
+            )
+        }
+        connection.executemany(
+            """
+            INSERT INTO repository_files
+              (id, repository_id, relative_path, absolute_path, kind, size,
+               modified_at, content_sha256)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              absolute_path=excluded.absolute_path,
+              kind=excluded.kind,
+              size=excluded.size,
+              modified_at=excluded.modified_at,
+              content_sha256=excluded.content_sha256
+            """,
+            (
+                (
+                    item.id,
+                    item.repository_id,
+                    item.relative_path,
+                    item.absolute_path,
+                    item.kind.value,
+                    item.size,
+                    item.modified_at.isoformat(),
+                    item.content_sha256,
+                )
+                for item in files
+            ),
+        )
+        connection.executemany(
+            "DELETE FROM repository_files WHERE id = ?",
+            ((file_id,) for file_id in existing_ids - incoming_ids),
+        )
+        connection.commit()
 
     def save_diagnostics(
         self, repository_id: str, diagnostics: tuple[Diagnostic, ...]
@@ -140,6 +215,30 @@ class SQLiteAnalysisStorage:
         ).fetchone()
         return int(row[0]) if row else 0
 
+    def save_report_metadata(self, report: GeneratedReportMetadata) -> None:
+        self._connect().execute(
+            """
+            INSERT INTO generated_reports
+              (id, repository_id, report_name, format, file_path,
+               content_sha256, generated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              file_path=excluded.file_path,
+              content_sha256=excluded.content_sha256,
+              generated_at=excluded.generated_at
+            """,
+            (
+                report.id,
+                report.repository_id,
+                report.report_name,
+                report.format,
+                report.file_path,
+                report.content_sha256,
+                report.generated_at.isoformat(),
+            ),
+        )
+        self._connect().commit()
+
     def _connect(self) -> sqlite3.Connection:
         if self._connection is None:
             self._connection = sqlite3.connect(self._database_path)
@@ -184,3 +283,33 @@ class SQLiteAnalysisStorage:
             """
         )
 
+    @staticmethod
+    def _migrate_to_v2(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS repository_files (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL REFERENCES repositories(id),
+                relative_path TEXT NOT NULL,
+                absolute_path TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                modified_at TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                UNIQUE (repository_id, relative_path)
+            );
+            CREATE INDEX IF NOT EXISTS repository_files_kind_idx
+                ON repository_files (repository_id, kind);
+            CREATE TABLE IF NOT EXISTS generated_reports (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL REFERENCES repositories(id),
+                report_name TEXT NOT NULL,
+                format TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                UNIQUE (repository_id, report_name, format)
+            );
+            UPDATE schema_metadata SET value = '2' WHERE key = 'schema_version';
+            """
+        )

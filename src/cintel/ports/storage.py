@@ -1,7 +1,12 @@
 from typing import Protocol
 
 from cintel.domain.diagnostics import Diagnostic
-from cintel.domain.models import AnalysisCapability, Repository
+from cintel.domain.models import (
+    AnalysisCapability,
+    GeneratedReportMetadata,
+    Repository,
+    RepositoryFile,
+)
 
 
 class AnalysisStorage(Protocol):
@@ -13,6 +18,12 @@ class AnalysisStorage(Protocol):
 
     def get_repository(self, repository_id: str) -> Repository | None: ...
 
+    def list_repository_files(self, repository_id: str) -> tuple[RepositoryFile, ...]: ...
+
+    def replace_repository_files(
+        self, repository_id: str, files: tuple[RepositoryFile, ...]
+    ) -> None: ...
+
     def save_diagnostics(
         self, repository_id: str, diagnostics: tuple[Diagnostic, ...]
     ) -> None: ...
@@ -23,3 +34,4 @@ class AnalysisStorage(Protocol):
 
     def schema_version(self) -> int: ...
 
+    def save_report_metadata(self, report: GeneratedReportMetadata) -> None: ...

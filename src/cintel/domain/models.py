@@ -117,6 +117,28 @@ class RepositoryFile:
 
 
 @dataclass(frozen=True, slots=True)
+class RepositoryScan:
+    repository: Repository
+    files: tuple[RepositoryFile, ...]
+    diagnostics: tuple[Diagnostic, ...]
+    capabilities: tuple[AnalysisCapability, ...]
+    scanned_at: datetime
+    hashes_computed: int
+    hashes_reused: int
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedReportMetadata:
+    id: str
+    repository_id: str
+    report_name: str
+    format: str
+    file_path: str
+    content_sha256: str
+    generated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class BuildConfiguration:
     id: str
     repository_id: str

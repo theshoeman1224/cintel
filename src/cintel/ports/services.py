@@ -10,6 +10,7 @@ from cintel.domain.models import (
     CompilerInvocation,
     ContextPackage,
     RepositoryFile,
+    RepositoryScan,
 )
 
 
@@ -31,6 +32,16 @@ class SourceParser(Protocol):
     ) -> AnalysisResult: ...
 
 
+class RepositoryDiscoveryProvider(Protocol):
+    def discover(
+        self,
+        repository_root: str,
+        repository_id: str,
+        exclusions: tuple[str, ...],
+        previous_files: tuple[RepositoryFile, ...] = (),
+    ) -> RepositoryScan: ...
+
+
 class ReportRenderer(Protocol):
     def render(self, report_name: str, data: Any) -> str: ...
 
@@ -46,4 +57,3 @@ class AIProvider(Protocol):
     def enabled(self) -> bool: ...
 
     def generate(self, prompt: str, context: ContextPackage) -> str: ...
-

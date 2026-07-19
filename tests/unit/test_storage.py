@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -5,7 +6,13 @@ from pathlib import Path
 
 from cintel.adapters.storage import SCHEMA_VERSION, SQLiteAnalysisStorage
 from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity
-from cintel.domain.models import AnalysisCapability, CapabilityStatus, Repository
+from cintel.domain.models import (
+    AnalysisCapability,
+    CapabilityStatus,
+    FileKind,
+    Repository,
+    RepositoryFile,
+)
 
 
 class SQLiteStorageTests(unittest.TestCase):
@@ -43,5 +50,50 @@ class SQLiteStorageTests(unittest.TestCase):
 
             self.assertEqual(SCHEMA_VERSION, storage.schema_version())
             self.assertEqual(repository, storage.get_repository(repository.id))
+            repository_file = RepositoryFile(
+                id="file-1",
+                repository_id=repository.id,
+                relative_path="main.c",
+                absolute_path="/repo/main.c",
+                kind=FileKind.C_SOURCE,
+                size=10,
+                modified_at=datetime.now(timezone.utc),
+                content_sha256="a" * 64,
+            )
+            storage.replace_repository_files(repository.id, (repository_file,))
+            self.assertEqual(
+                (repository_file,), storage.list_repository_files(repository.id)
+            )
+            storage.replace_repository_files(repository.id, ())
+            self.assertEqual((), storage.list_repository_files(repository.id))
             storage.close()
 
+    def test_migrates_an_existing_v1_database_to_v2(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "index.sqlite"
+            connection = sqlite3.connect(database)
+            connection.executescript(
+                """
+                CREATE TABLE schema_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                CREATE TABLE repositories (
+                    id TEXT PRIMARY KEY,
+                    root TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                INSERT INTO schema_metadata (key, value)
+                VALUES ('schema_version', '1');
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            storage = SQLiteAnalysisStorage(database)
+            storage.initialize()
+
+            self.assertEqual(2, storage.schema_version())
+            self.assertEqual((), storage.list_repository_files("repository-1"))
+            storage.close()

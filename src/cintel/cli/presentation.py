@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any
 
 from cintel.application.initialization import InitializationResult
+from cintel.application.scanning import ScanWorkflowResult
 from cintel.domain.models import DoctorReport
 
 
@@ -59,6 +60,26 @@ def render_doctor(report: DoctorReport, as_json: bool = False) -> str:
             lines.extend(f"    Action: {action}" for action in diagnostic.suggested_actions)
     lines.extend(("", "Recommended next actions:"))
     lines.extend(f"  - {action}" for action in report.recommended_actions)
+    return "\n".join(lines)
+
+
+def render_scan(result: ScanWorkflowResult, as_json: bool = False) -> str:
+    if as_json:
+        return _json(result)
+    scan = result.scan
+    lines = [
+        f"Scanned {scan.repository.root}",
+        f"Relevant files: {len(scan.files)}",
+        f"SHA-256 hashes: {scan.hashes_computed} computed, {scan.hashes_reused} reused",
+    ]
+    if result.markdown_report:
+        lines.append(f"Markdown report: {result.markdown_report}")
+    if result.json_report:
+        lines.append(f"JSON report: {result.json_report}")
+    for diagnostic in scan.diagnostics:
+        lines.append(
+            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
+        )
     return "\n".join(lines)
 
 

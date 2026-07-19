@@ -3,9 +3,10 @@
 Legacy C Code Intelligence (`cintel`) is an offline-first command-line
 application for turning legacy C repositories into structured, build-aware
 knowledge for developers and coding agents. The current codebase implements
-the Phase 1 foundation: initialization, environment diagnostics, pure domain
-models and ports, a safe command runner, versioned SQLite state, configuration,
-and dependency composition.
+the Phase 1 foundation and Phase 2 repository inventory: initialization,
+environment diagnostics, recursive C/build-input discovery, incremental
+SHA-256 hashing, SQLite state, deterministic Markdown/JSON inventory reports,
+configuration, and dependency composition.
 
 It does not send source code externally. AI is disabled by default, and the
 deterministic analysis architecture does not depend on an AI model.
@@ -35,6 +36,7 @@ environment:
 ```bash
 cintel init /path/to/legacy-c-repository
 cintel --repository /path/to/legacy-c-repository doctor
+cintel --repository /path/to/legacy-c-repository scan
 ```
 
 Generated state is kept under `.code-intelligence/`. `init` will not overwrite
@@ -53,8 +55,9 @@ cintel --repository ./example analyze
 cintel --repository ./example report
 ```
 
-These commands beyond `init` and `doctor` are documented as planned behavior;
-they are deliberately not exposed as successful no-ops in Phase 1.
+`scan` is implemented. Build discovery, analysis, and general reports in the
+example above are planned behavior and are deliberately not exposed as
+successful no-ops.
 
 ## Makefile discovery
 
@@ -109,9 +112,10 @@ The project uses ports and adapters:
 - `application` coordinates use cases such as initialization and doctor checks.
 - `ports` defines command, build, compiler, parser, storage, rendering,
   guidance, and AI contracts.
-- `adapters` contains the subprocess command runner, SQLite persistence, and
-  disabled AI provider. Later adapters will isolate Make, GCC, parsing, and
-  reporting behavior.
+- `adapters` contains filesystem repository discovery and output writing,
+  Markdown/JSON repository rendering, the subprocess command runner, SQLite
+  persistence, and the disabled AI provider. Later adapters will isolate Make,
+  GCC, and C parsing behavior.
 - `configuration` reads TOML and owns the small initial configuration schema.
 - `cli` parses arguments, invokes application services, and renders results.
 - `composition.py` is the composition root; there are no global service
@@ -142,16 +146,17 @@ Python 3.11's `tomllib` reads `.code-intelligence/config.toml`. Phase 1 writes a
 small documented schema without adding a TOML dependency. Default exclusions
 include `.git`, `.code-intelligence`, and common build/object directories.
 
-SQLite stores a schema version in `schema_metadata`. Migrations are applied
+SQLite stores a schema version in `schema_metadata`. Schema v2 adds repository
+file inventory and generated-report metadata. Migrations are applied
 incrementally by the storage adapter; a database newer than the application is
 rejected explicitly.
 
 ## Known MVP limitations
 
-Only the Phase 1 foundation is currently implemented. Repository scanning,
-Make dry-run discovery, compiler argument parsing, conservative C parsing,
-relationships, guided artifact recovery, reports, context packages, and GCC
-enrichment belong to subsequent vertical slices.
+The Phase 1 foundation and Phase 2 repository inventory are implemented. Make
+dry-run discovery, compiler argument parsing, conservative C parsing,
+relationships, guided artifact recovery, broader reports, context packages,
+and GCC enrichment belong to subsequent vertical slices.
 
 Even after those slices, conservative analysis will have known limitations:
 
@@ -168,4 +173,3 @@ Even after those slices, conservative analysis will have known limitations:
 
 The tool will surface these as capabilities, evidence levels, confidence, and
 structured diagnostics instead of silently inventing facts.
-

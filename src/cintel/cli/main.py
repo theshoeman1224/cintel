@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from cintel.cli.presentation import render_doctor, render_initialization
+from cintel.cli.presentation import render_doctor, render_initialization, render_scan
 from cintel.composition import create_application
 from cintel.configuration.loader import default_config, load_config
 from cintel.domain.errors import CintelError
@@ -29,6 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     initialize.add_argument("repository_path", type=Path)
     subcommands.add_parser("doctor", help="Inspect tools, inputs, and capabilities")
+    subcommands.add_parser(
+        "scan", help="Inventory C sources, headers, and Make build inputs"
+    )
     return parser
 
 
@@ -51,6 +54,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = app.doctor.inspect(config)
             print(render_doctor(report, args.json))
             return 2 if any(item.severity.value == "error" for item in report.diagnostics) else 0
+
+        if args.command == "scan":
+            config = _resolve_config(args.config, args.repository, args.output_directory)
+            result = app.scanning.scan(config)
+            print(render_scan(result, args.json))
+            return (
+                2
+                if any(
+                    item.severity.value == "error" for item in result.scan.diagnostics
+                )
+                else 0
+            )
 
         parser.error(f"Unsupported command: {args.command}")
     except CintelError as exc:
@@ -75,4 +90,3 @@ def _resolve_config(
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

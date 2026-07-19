@@ -12,6 +12,10 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def stable_id(namespace: str, *parts: str) -> str:
     payload = "\0".join((namespace, *parts)).encode("utf-8")
     return f"{namespace}-{hashlib.sha256(payload).hexdigest()[:24]}"
@@ -22,4 +26,3 @@ def stable_fingerprint(data: Any) -> str:
         data, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
-
