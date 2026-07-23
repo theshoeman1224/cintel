@@ -5,6 +5,8 @@ from typing import Any, Protocol
 from cintel.domain.models import (
     AnalysisResult,
     BuildConfiguration,
+    BuildDiscoveryResult,
+    CommandRequest,
     CommandInstruction,
     CompilationUnit,
     CompilerInvocation,
@@ -15,9 +17,26 @@ from cintel.domain.models import (
 
 
 class BuildDiscoveryProvider(Protocol):
-    def discover(
-        self, configuration: BuildConfiguration
-    ) -> tuple[CompilationUnit, ...]: ...
+    def discover(self, configuration: BuildConfiguration) -> BuildDiscoveryResult: ...
+
+    def input_fingerprint(self, configuration: BuildConfiguration) -> str: ...
+
+    def command_request(self, configuration: BuildConfiguration) -> CommandRequest: ...
+
+
+class CompilerCommandParser(Protocol):
+    def parse(
+        self,
+        raw_command: str,
+        working_directory: str,
+        repository_root: str,
+        build_configuration_id: str,
+        repository_id: str,
+    ) -> tuple[CompilerInvocation, ...] | None: ...
+
+
+class CompilerMetadataProvider(Protocol):
+    def version(self, executable: str, working_directory: str) -> str | None: ...
 
 
 class CompilerProvider(Protocol):

@@ -3,6 +3,9 @@ from typing import Protocol
 from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
     AnalysisCapability,
+    BuildConfiguration,
+    BuildDiscoveryResult,
+    CompilationUnit,
     GeneratedReportMetadata,
     Repository,
     RepositoryFile,
@@ -25,7 +28,10 @@ class AnalysisStorage(Protocol):
     ) -> None: ...
 
     def save_diagnostics(
-        self, repository_id: str, diagnostics: tuple[Diagnostic, ...]
+        self,
+        repository_id: str,
+        diagnostics: tuple[Diagnostic, ...],
+        context: str = "general",
     ) -> None: ...
 
     def save_capabilities(
@@ -35,3 +41,17 @@ class AnalysisStorage(Protocol):
     def schema_version(self) -> int: ...
 
     def save_report_metadata(self, report: GeneratedReportMetadata) -> None: ...
+
+    def save_build_discovery(self, result: BuildDiscoveryResult) -> None: ...
+
+    def get_cached_build_discovery(
+        self, input_fingerprint: str
+    ) -> BuildDiscoveryResult | None: ...
+
+    def list_build_configurations(
+        self, repository_id: str
+    ) -> tuple[BuildConfiguration, ...]: ...
+
+    def list_compilation_units(
+        self, repository_id: str, build_configuration_name: str | None = None
+    ) -> tuple[CompilationUnit, ...]: ...

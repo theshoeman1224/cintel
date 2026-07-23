@@ -143,11 +143,14 @@ class BuildConfiguration:
     id: str
     repository_id: str
     name: str
+    repository_root: str
     makefile: str | None = None
     working_directory: str | None = None
     target: str | None = None
     make_variables: tuple[tuple[str, str], ...] = ()
     environment_overrides: tuple[tuple[str, str], ...] = ()
+    build_input_hashes: tuple[tuple[str, str], ...] = ()
+    respect_make_timestamps: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +202,37 @@ class CompilationUnit:
     source_file_id: str | None
     compiler_invocation: CompilerInvocation
     fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class RawBuildCommand:
+    raw_content: str
+    working_directory: str
+    classification: str
+    parse_diagnostic: Diagnostic | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuildDiscoveryResult:
+    configuration: BuildConfiguration
+    make_arguments: tuple[str, ...]
+    raw_output: str
+    raw_error: str
+    exit_code: int
+    duration_seconds: float
+    commands: tuple[RawBuildCommand, ...]
+    compiler_invocations: tuple[CompilerInvocation, ...]
+    compilation_units: tuple[CompilationUnit, ...]
+    diagnostics: tuple[Diagnostic, ...]
+    capabilities: tuple[AnalysisCapability, ...]
+    input_fingerprint: str
+    build_fingerprint: str
+    discovered_at: datetime
+    compiler_versions: tuple[tuple[str, str], ...] = ()
+    selected_source_files: tuple[str, ...] = ()
+    excluded_source_files: tuple[str, ...] = ()
+    missing_source_files: tuple[str, ...] = ()
+    from_cache: bool = False
 
 
 @dataclass(frozen=True, slots=True)

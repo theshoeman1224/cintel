@@ -4,7 +4,13 @@ from cintel.application.scanning import RepositoryScanService, ScanWorkflowResul
 
 __all__ = [
     "DoctorService",
+    "BuildDiscoveryService",
     "InitializationService",
     "RepositoryScanService",
     "ScanWorkflowResult",
+    "parse_assignments",
 ]
+from cintel.application.build_discovery import (
+    BuildDiscoveryService,
+    parse_assignments,
+)

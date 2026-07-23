@@ -5,7 +5,8 @@ application for turning legacy C repositories into structured, build-aware
 knowledge for developers and coding agents. The current codebase implements
 the Phase 1 foundation and Phase 2 repository inventory: initialization,
 environment diagnostics, recursive C/build-input discovery, incremental
-SHA-256 hashing, SQLite state, deterministic Markdown/JSON inventory reports,
+SHA-256 hashing, GNU Make dry-run build discovery, compiler-command
+normalization, SQLite state, deterministic Markdown/JSON inventory reports,
 configuration, and dependency composition.
 
 It does not send source code externally. AI is disabled by default, and the
@@ -37,6 +38,11 @@ environment:
 cintel init /path/to/legacy-c-repository
 cintel --repository /path/to/legacy-c-repository doctor
 cintel --repository /path/to/legacy-c-repository scan
+cintel --repository /path/to/legacy-c-repository \
+  --makefile Makefile --target all --build-config debug \
+  --make-var MODE=debug --non-interactive build discover
+cintel --repository /path/to/legacy-c-repository \
+  --build-config debug build units
 ```
 
 Generated state is kept under `.code-intelligence/`. `init` will not overwrite
@@ -55,28 +61,43 @@ cintel --repository ./example analyze
 cintel --repository ./example report
 ```
 
-`scan` is implemented. Build discovery, analysis, and general reports in the
-example above are planned behavior and are deliberately not exposed as
-successful no-ops.
+`scan` and the three `build` subcommands are implemented. Source analysis and
+general reports in the example above are planned behavior and are deliberately
+not exposed as successful no-ops.
 
 ## Makefile discovery
 
-The planned Make adapter will ask GNU Make to evaluate the selected build using
+The Make adapter asks GNU Make to evaluate the selected build using
 an argument-list equivalent of:
 
 ```bash
 make -n -B -f Makefile target VAR=value
 ```
 
-`cintel` will not attempt to parse all Make syntax itself. Makefiles are
+Use `--respect-make-timestamps` to omit `-B`. Use
+`--force-build-discovery` to bypass a matching cached result. Raw standard
+output, standard error, normalized commands, non-compiler commands, and
+unparseable command evidence are retained in SQLite.
+
+`cintel` does not attempt to parse all Make syntax itself. Makefiles are
 programs: includes, functions, recursive invocations, variable expansion and
 `$(shell ...)` behavior cannot be reproduced reliably by a small parser.
 Using Make preserves the build's actual evaluation semantics while the adapter
 captures and conservatively interprets its output.
 
 Important: `make -n` can still evaluate `$(shell ...)` expressions. Future
-interactive workflows will preview Make evaluation commands before running
-them. Real builds and unknown generation targets will never run automatically.
+interactive workflows preview Make evaluation commands and request
+confirmation before running them. `--non-interactive` permits Makefile
+evaluation but does not authorize mutating commands. Real builds and unknown
+generation targets are never run automatically.
+
+The parser follows recursive Make entering/leaving messages, `cd directory &&
+command`, shell-aware `&&` and `;` boundaries, environment prefixes, `ccache`,
+`distcc`, `env`, `nice`, and `time`. GCC, `cc`, cross-GCC names, and Clang-like
+commands are recognized conservatively. Unknown compiler flags and raw commands
+are preserved. A read-only `<compiler> --version` probe contributes available
+compiler identity to the build fingerprint; broader GCC capability probing
+remains optional future enrichment.
 
 ## Guided setup and offline behavior
 
@@ -113,9 +134,10 @@ The project uses ports and adapters:
 - `ports` defines command, build, compiler, parser, storage, rendering,
   guidance, and AI contracts.
 - `adapters` contains filesystem repository discovery and output writing,
-  Markdown/JSON repository rendering, the subprocess command runner, SQLite
-  persistence, and the disabled AI provider. Later adapters will isolate Make,
-  GCC, and C parsing behavior.
+  Markdown/JSON repository rendering, Make discovery, GCC-style argument
+  normalization, the subprocess command runner, SQLite persistence, and the
+  disabled AI provider. Later adapters will add compiler enrichment and C
+  parsing behavior.
 - `configuration` reads TOML and owns the small initial configuration schema.
 - `cli` parses arguments, invokes application services, and renders results.
 - `composition.py` is the composition root; there are no global service
@@ -147,16 +169,18 @@ small documented schema without adding a TOML dependency. Default exclusions
 include `.git`, `.code-intelligence`, and common build/object directories.
 
 SQLite stores a schema version in `schema_metadata`. Schema v2 adds repository
-file inventory and generated-report metadata. Migrations are applied
+file inventory and generated-report metadata. Schema v3 adds build
+configurations, discovery runs, raw build commands, compiler invocations, and
+compilation units. Migrations are applied
 incrementally by the storage adapter; a database newer than the application is
 rejected explicitly.
 
 ## Known MVP limitations
 
-The Phase 1 foundation and Phase 2 repository inventory are implemented. Make
-dry-run discovery, compiler argument parsing, conservative C parsing,
-relationships, guided artifact recovery, broader reports, context packages,
-and GCC enrichment belong to subsequent vertical slices.
+The Phase 1 foundation, Phase 2 repository inventory, and Phase 3 Make build
+discovery are implemented. Conservative C parsing, relationships, guided
+artifact recovery, broader reports, context packages, and GCC enrichment
+belong to subsequent vertical slices.
 
 Even after those slices, conservative analysis will have known limitations:
 

@@ -1,0 +1,51 @@
+make CONFIG=embedded app
+make[1]: Entering directory '<FIXTURE_ROOT>'
+python3 tools/generate_build_files.py --platform embedded --configuration embedded \
+	--telemetry 0 --fast-filter 0 --output generated
+python3 tools/generate_build_files.py --platform embedded --configuration embedded \
+	--telemetry 0 --fast-filter 0 --output generated
+mkdir -p build/embedded/src/app/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/app/main.c -o build/embedded/src/app/main.o
+mkdir -p build/embedded/src/configuration/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/configuration/configuration.c -o build/embedded/src/configuration/configuration.o
+mkdir -p build/embedded/src/core/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/core/application.c -o build/embedded/src/core/application.o
+mkdir -p build/embedded/src/core/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/core/diagnostics.c -o build/embedded/src/core/diagnostics.o
+mkdir -p build/embedded/src/core/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/core/state_machine.c -o build/embedded/src/core/state_machine.o
+mkdir -p build/embedded/src/drivers/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/drivers/sensor_driver.c -o build/embedded/src/drivers/sensor_driver.o
+mkdir -p build/embedded/src/drivers/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/drivers/transport_driver.c -o build/embedded/src/drivers/transport_driver.o
+mkdir -p build/embedded/src/platform/common/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/platform/common/platform_common.c -o build/embedded/src/platform/common/platform_common.o
+mkdir -p build/embedded/src/routing/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/routing/router.c -o build/embedded/src/routing/router.o
+mkdir -p build/embedded/src/shared/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/shared/checksum.c -o build/embedded/src/shared/checksum.o
+mkdir -p build/embedded/src/shared/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/shared/conversion.c -o build/embedded/src/shared/conversion.o
+mkdir -p build/embedded/src/include_cycle/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/include_cycle/cycle_user.c -o build/embedded/src/include_cycle/cycle_user.o
+mkdir -p build/embedded/third_party/src/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c third_party/src/vendor_stub.c -o build/embedded/third_party/src/vendor_stub.o
+python3 tools/generate_build_files.py --platform embedded --configuration embedded \
+	--telemetry 0 --fast-filter 0 --output generated
+mkdir -p build/embedded/generated/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c generated/version_info.c -o build/embedded/generated/version_info.o
+mkdir -p build/embedded/src/platform/embedded/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c src/platform/embedded/platform_embedded.c -o build/embedded/src/platform/embedded/platform_embedded.o
+make -C src/plugins ROOT=<FIXTURE_ROOT> CONFIG=embedded BUILD_DIR=<FIXTURE_ROOT>/build/embedded \
+	CC='gcc' USE_COMPILER_WRAPPER=0 V=1 all
+make[2]: Entering directory '<FIXTURE_ROOT>/src/plugins'
+mkdir -p <FIXTURE_ROOT>/build/embedded/plugins/
+env FIXTURE_MODULE=plugins gcc -I<FIXTURE_ROOT>/include -I<FIXTURE_ROOT>/generated -isystem <FIXTURE_ROOT>/third_party/include -include <FIXTURE_ROOT>/generated/build_config.h -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c plugin_registry.c -o <FIXTURE_ROOT>/build/embedded/plugins/plugin_registry.o
+mkdir -p <FIXTURE_ROOT>/build/embedded/plugins/
+env FIXTURE_MODULE=plugins gcc -I<FIXTURE_ROOT>/include -I<FIXTURE_ROOT>/generated -isystem <FIXTURE_ROOT>/third_party/include -include <FIXTURE_ROOT>/generated/build_config.h -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c plugin_alpha.c -o <FIXTURE_ROOT>/build/embedded/plugins/plugin_alpha.o
+mkdir -p <FIXTURE_ROOT>/build/embedded/plugins/
+env FIXTURE_MODULE=plugins gcc -I<FIXTURE_ROOT>/include -I<FIXTURE_ROOT>/generated -isystem <FIXTURE_ROOT>/third_party/include -include <FIXTURE_ROOT>/generated/build_config.h -DPLATFORM_EMBEDDED -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=0 -DCHECKSUM_WIDTH=16 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O0 -c plugin_beta.c -o <FIXTURE_ROOT>/build/embedded/plugins/plugin_beta.o
+ar rcs <FIXTURE_ROOT>/build/embedded/libplugins.a <FIXTURE_ROOT>/build/embedded/plugins/plugin_registry.o <FIXTURE_ROOT>/build/embedded/plugins/plugin_alpha.o <FIXTURE_ROOT>/build/embedded/plugins/plugin_beta.o
+make[2]: Leaving directory '<FIXTURE_ROOT>/src/plugins'
+gcc build/embedded/src/app/main.o build/embedded/src/configuration/configuration.o build/embedded/src/core/application.o build/embedded/src/core/diagnostics.o build/embedded/src/core/state_machine.o build/embedded/src/drivers/sensor_driver.o build/embedded/src/drivers/transport_driver.o build/embedded/src/platform/common/platform_common.o build/embedded/src/routing/router.o build/embedded/src/shared/checksum.o build/embedded/src/shared/conversion.o build/embedded/src/include_cycle/cycle_user.o build/embedded/third_party/src/vendor_stub.o build/embedded/generated/version_info.o build/embedded/src/platform/embedded/platform_embedded.o build/embedded/libplugins.a  -o build/embedded/sensor_router
+make[1]: Leaving directory '<FIXTURE_ROOT>'

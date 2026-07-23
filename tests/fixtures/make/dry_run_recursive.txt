@@ -1,0 +1,11 @@
+make -C sub all
+make[1]: Entering directory 'sub'
+mkdir -p obj
+env BUILD_MODE=debug ccache arm-none-eabi-gcc -I../include -isystem /opt/sdk/include -DDEBUG -DLEVEL=3 -UOLD -include ../config.h -std=gnu11 -O2 -g3 -Wall -mcpu=cortex-m4 -MMD -MF obj/worker.d -c src/worker.c -o obj/worker.o
+cd nested && distcc gcc -I../../include -c helper.c -o ../obj/helper.o; echo "helper; complete"
+make[2]: Entering directory 'deeper'
+nice -n 5 time -p gcc -c deep.c -o deep.o
+make[2]: Leaving directory 'deeper'
+gcc obj/worker.o obj/helper.o -o app
+printf 'unterminated
+make[1]: Leaving directory 'sub'

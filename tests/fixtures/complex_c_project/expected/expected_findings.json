@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "fixture_name": "complex_c_project",
+  "build_configurations": {
+    "linux": {
+      "target": "linux",
+      "defines": ["PLATFORM_LINUX", "FEATURE_TELEMETRY=1", "USE_FAST_FILTER=1", "CHECKSUM_WIDTH=32"],
+      "optimization": "-O2"
+    },
+    "embedded": {
+      "target": "embedded",
+      "defines": ["PLATFORM_EMBEDDED", "FEATURE_TELEMETRY=0", "USE_FAST_FILTER=0", "CHECKSUM_WIDTH=16"],
+      "optimization": "-O0"
+    },
+    "tests": {
+      "target": "tests",
+      "defines": ["PLATFORM_LINUX", "UNIT_TEST", "FEATURE_TELEMETRY=0", "USE_FAST_FILTER=1"],
+      "optimization": "-O1"
+    }
+  },
+  "expected_files": [
+    {"id": "file-main", "category": "FILE", "source_path": "src/app/main.c", "required": true},
+    {"id": "file-application", "category": "FILE", "source_path": "src/core/application.c", "required": true},
+    {"id": "file-router", "category": "FILE", "source_path": "src/routing/router.c", "required": true},
+    {"id": "file-checksum", "category": "FILE", "source_path": "src/shared/checksum.c", "required": true},
+    {"id": "file-unused", "category": "BUILD_EXCLUDED_FILE", "source_path": "src/legacy/unused_legacy_module.c", "required": true},
+    {"id": "file-assembly", "category": "UNSUPPORTED_LANGUAGE_FILE", "source_path": "unsupported/legacy_startup.S", "required": true},
+    {"id": "file-generated-header", "category": "GENERATED_FILE", "source_path": "generated/build_config.h", "required": true},
+    {"id": "file-generated-source", "category": "GENERATED_FILE", "source_path": "generated/version_info.c", "required": true}
+  ],
+  "expected_symbols": [
+    {"id": "fn-main", "category": "FUNCTION_DEFINITION", "source_path": "src/app/main.c", "symbol": "main", "required": true, "confidence": "confirmed"},
+    {"id": "fn-app-init", "category": "FUNCTION_DEFINITION", "source_path": "src/core/application.c", "symbol": "application_initialize", "required": true, "confidence": "confirmed"},
+    {"id": "fn-router-complex", "category": "HIGH_COMPLEXITY", "source_path": "src/routing/router.c", "symbol": "router_classify_message", "required": true, "confidence": "confirmed"},
+    {"id": "fn-recursion", "category": "DIRECT_RECURSION", "source_path": "src/drivers/transport_driver.c", "symbol": "perform_retry_sequence", "required": true, "confidence": "confirmed"},
+    {"id": "global-app-state", "category": "GLOBAL_DECLARATION", "source_path": "src/core/application.c", "symbol": "g_application_state", "required": true, "confidence": "confirmed"},
+    {"id": "global-volatile", "category": "VOLATILE_GLOBAL", "source_path": "src/core/diagnostics.c", "symbol": "g_diagnostic_event_count", "required": true, "confidence": "confirmed"},
+    {"id": "type-app-status", "category": "TYPE_DEFINITION", "source_path": "include/cintel_fixture/types.h", "symbol": "AppStatus", "required": true, "confidence": "confirmed"},
+    {"id": "macro-plugin", "category": "MACRO_DEFINITION", "source_path": "include/cintel_fixture/plugin.h", "symbol": "DEFINE_PLUGIN_HANDLER", "required": true, "confidence": "confirmed"},
+    {"id": "macro-alpha", "category": "MACRO_GENERATED_SYMBOL", "source_path": "src/plugins/plugin_alpha.c", "symbol": "plugin_alpha_handle", "required": false, "confidence": "heuristic"},
+    {"id": "weak-hook", "category": "WEAK_SYMBOL", "source_path": "src/platform/common/platform_common.c", "symbol": "platform_event_hook", "required": false, "confidence": "heuristic"}
+  ],
+  "expected_relationships": [
+    {"id": "call-app-init-config", "category": "DIRECT_CALL", "source_path": "src/core/application.c", "symbol": "application_initialize", "related_symbol": "configuration_load", "build_configurations": ["linux", "embedded", "tests"], "required": true, "confidence": "confirmed"},
+    {"id": "call-app-init-platform", "category": "DIRECT_CALL", "source_path": "src/core/application.c", "symbol": "application_initialize", "related_symbol": "platform_initialize", "build_configurations": ["linux", "embedded", "tests"], "required": true, "confidence": "confirmed"},
+    {"id": "call-run-sensor", "category": "DIRECT_CALL", "source_path": "src/core/application.c", "symbol": "application_run", "related_symbol": "sensor_poll", "build_configurations": ["linux", "embedded", "tests"], "required": true, "confidence": "confirmed"},
+    {"id": "call-run-router", "category": "DIRECT_CALL", "source_path": "src/core/application.c", "symbol": "application_run", "related_symbol": "router_dispatch", "build_configurations": ["linux", "embedded", "tests"], "required": true, "confidence": "confirmed"},
+    {"id": "call-init-telemetry", "category": "CONDITIONAL_CALL", "source_path": "src/core/application.c", "symbol": "application_initialize", "related_symbol": "telemetry_initialize", "build_configurations": ["linux"], "required": true, "confidence": "confirmed"},
+    {"id": "call-router-handler", "category": "POSSIBLE_INDIRECT_CALL", "source_path": "src/routing/router.c", "symbol": "router_dispatch", "related_symbol": "handler", "required": false, "confidence": "heuristic"},
+    {"id": "include-app-header", "category": "INCLUDE_RELATIONSHIP", "source_path": "src/core/application.c", "related_symbol": "cintel_fixture/application.h", "required": true, "confidence": "confirmed"},
+    {"id": "include-cycle-a-b", "category": "INCLUDE_CYCLE", "source_path": "include/cintel_fixture/cycle_a.h", "related_symbol": "cycle_b.h", "required": false, "confidence": "heuristic"},
+    {"id": "global-write-app", "category": "GLOBAL_WRITE", "source_path": "src/core/application.c", "symbol": "application_initialize", "related_symbol": "g_application_state", "required": true, "confidence": "confirmed"},
+    {"id": "global-read-app", "category": "GLOBAL_READ", "source_path": "src/core/application.c", "symbol": "application_get_state", "related_symbol": "g_application_state", "required": true, "confidence": "confirmed"}
+  ],
+  "expected_build_properties": [
+    {"id": "build-linux-platform", "category": "DEFINE", "value": "PLATFORM_LINUX", "build_configurations": ["linux"], "required": true, "rationale": "Linux target-specific define"},
+    {"id": "build-embedded-platform", "category": "DEFINE", "value": "PLATFORM_EMBEDDED", "build_configurations": ["embedded"], "required": true, "rationale": "Embedded target-specific define"},
+    {"id": "build-tests-unit", "category": "DEFINE", "value": "UNIT_TEST", "build_configurations": ["tests"], "required": true, "rationale": "Test-only define"},
+    {"id": "build-system-include", "category": "INCLUDE_PATH", "value": "third_party/include", "system": true, "build_configurations": ["linux", "embedded", "tests"], "required": true, "rationale": "Vendor headers are system includes"},
+    {"id": "build-forced-include", "category": "FORCED_INCLUDE", "value": "generated/build_config.h", "build_configurations": ["linux", "embedded", "tests"], "required": true, "rationale": "Generated build configuration is force-included"},
+    {"id": "build-checksum-multi", "category": "MULTI_CONFIGURATION_UNIT", "source_path": "src/shared/checksum.c", "build_configurations": ["linux", "embedded", "tests"], "required": true, "rationale": "Shared checksum has configuration-specific flags"},
+    {"id": "build-linux-source", "category": "BUILD_MEMBERSHIP", "source_path": "src/platform/linux/platform_linux.c", "build_configurations": ["linux"], "required": true, "rationale": "Linux platform source selection"},
+    {"id": "build-embedded-source", "category": "BUILD_MEMBERSHIP", "source_path": "src/platform/embedded/platform_embedded.c", "build_configurations": ["embedded"], "required": true, "rationale": "Embedded platform source selection"},
+    {"id": "build-unused-excluded", "category": "BUILD_EXCLUSION", "source_path": "src/legacy/unused_legacy_module.c", "build_configurations": ["linux", "embedded", "tests"], "required": true, "rationale": "Repository-only legacy source"}
+  ],
+  "expected_diagnostics": [
+    {"id": "diag-missing-site-config", "category": "MISSING_INPUT", "source_path": "generated/external_site_config.h", "build_configurations": ["missing-input-demo"], "required": true, "rationale": "Intentionally absent generated site header"},
+    {"id": "diag-assembly-unsupported", "category": "UNSUPPORTED_LANGUAGE", "source_path": "unsupported/legacy_startup.S", "required": false, "rationale": "Assembly is outside the C MVP"}
+  ],
+  "known_limitations": [
+    "Function-pointer dispatch through MessageHandler.handler may remain unresolved.",
+    "Functions generated by DEFINE_PLUGIN_HANDLER may require heuristic parsing.",
+    "Weak-symbol link-time replacement is outside source-only analysis.",
+    "The current cintel phase does not yet export functions, calls, includes, types, or globals.",
+    "Assembly and runtime dispatch are outside the C MVP."
+  ]
+}

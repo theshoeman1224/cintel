@@ -1,0 +1,7 @@
+#include "cintel_fixture/configuration.h"
+
+/* CINTEL_EXPECT[GENERATED_FILE]: path=generated/version_info.c; kind=source */
+const char *fixture_version_string(void)
+{
+    return FIXTURE_VERSION;
+}
