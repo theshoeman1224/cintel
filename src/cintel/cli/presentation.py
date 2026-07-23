@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
@@ -9,6 +10,7 @@ from typing import Any
 from cintel.application.initialization import InitializationResult
 from cintel.application.scanning import ScanWorkflowResult
 from cintel.domain.models import DoctorReport
+from cintel.domain.models import BuildDiscoveryResult, CompilationUnit
 
 
 def render_initialization(result: InitializationResult, as_json: bool = False) -> str:
@@ -83,8 +85,74 @@ def render_scan(result: ScanWorkflowResult, as_json: bool = False) -> str:
     return "\n".join(lines)
 
 
+def render_build_discovery(
+    result: BuildDiscoveryResult, as_json: bool = False
+) -> str:
+    if as_json:
+        return _json(result)
+    lines = [
+        f"Build configuration: {result.configuration.name}",
+        f"Make command: {shlex.join(result.make_arguments)}",
+        f"Make exit code: {result.exit_code}",
+        f"Compiler invocations: {len(result.compiler_invocations)}",
+        f"Compilation units: {len(result.compilation_units)}",
+        f"Selected source files: {len(result.selected_source_files)}",
+        f"Repository sources outside this build: {len(result.excluded_source_files)}",
+        f"Missing source files: {len(result.missing_source_files)}",
+        "Compiler versions: "
+        + (
+            ", ".join(f"{name}: {version}" for name, version in result.compiler_versions)
+            if result.compiler_versions
+            else "unavailable"
+        ),
+        f"Build fingerprint: {result.build_fingerprint}",
+        f"Source: {'cache' if result.from_cache else 'Make dry-run'}",
+    ]
+    for diagnostic in result.diagnostics:
+        lines.append(
+            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
+        )
+    return "\n".join(lines)
+
+
+def render_compilation_units(
+    units: tuple[CompilationUnit, ...], as_json: bool = False
+) -> str:
+    if as_json:
+        return _json(units)
+    if not units:
+        return "No compilation units found."
+    lines = []
+    for unit in units:
+        invocation = unit.compiler_invocation
+        source = (
+            invocation.source.repository_relative or invocation.source.absolute
+            if invocation.source
+            else "<unknown>"
+        )
+        object_path = (
+            invocation.object_file.repository_relative
+            or invocation.object_file.absolute
+            if invocation.object_file
+            else "<none>"
+        )
+        lines.extend(
+            (
+                f"{source}",
+                f"  Unit: {unit.id}",
+                f"  Build configuration: {unit.build_configuration_id}",
+                f"  Compiler: {invocation.compiler_executable}",
+                f"  Object: {object_path}",
+                f"  Working directory: {invocation.working_directory}",
+                f"  Arguments: {shlex.join(invocation.raw_arguments)}",
+            )
+        )
+    return "\n".join(lines)
+
+
 def _json(value: Any) -> str:
-    return json.dumps(asdict(value), default=_json_default, indent=2, sort_keys=True)
+    material = [asdict(item) for item in value] if isinstance(value, tuple) else asdict(value)
+    return json.dumps(material, default=_json_default, indent=2, sort_keys=True)
 
 
 def _json_default(value: Any) -> Any:

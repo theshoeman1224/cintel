@@ -68,7 +68,7 @@ class SQLiteStorageTests(unittest.TestCase):
             self.assertEqual((), storage.list_repository_files(repository.id))
             storage.close()
 
-    def test_migrates_an_existing_v1_database_to_v2(self) -> None:
+    def test_migrates_an_existing_v1_database_to_current_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "index.sqlite"
             connection = sqlite3.connect(database)
@@ -84,6 +84,14 @@ class SQLiteStorageTests(unittest.TestCase):
                     name TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE diagnostics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    repository_id TEXT NOT NULL REFERENCES repositories(id),
+                    code TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                );
                 INSERT INTO schema_metadata (key, value)
                 VALUES ('schema_version', '1');
                 """
@@ -94,6 +102,6 @@ class SQLiteStorageTests(unittest.TestCase):
             storage = SQLiteAnalysisStorage(database)
             storage.initialize()
 
-            self.assertEqual(2, storage.schema_version())
+            self.assertEqual(3, storage.schema_version())
             self.assertEqual((), storage.list_repository_files("repository-1"))
             storage.close()

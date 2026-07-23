@@ -12,18 +12,45 @@ ENV/
 # Test, coverage, and type-checker caches
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 .pytest_cache/
+.hypothesis/
 .mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.pyright/
 .ruff_cache/
 .tox/
 .nox/
 
 # Packaging and build output
 build/
+!src/cintel/adapters/build/
+!src/cintel/adapters/build/*.py
 dist/
+wheels/
+pip-wheel-metadata/
 *.egg-info/
 *.egg
+
+# Native compiler and coverage artifacts
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.d
+*.gcda
+*.gcno
+*.gcov
+
+# Local environments and secrets
+.env
+.env.*
+!.env.example
+.direnv/
 
 # Legacy C Code Intelligence generated output
 .code-intelligence/
@@ -33,6 +60,7 @@ dist/
 .vscode/
 *.swp
 *.swo
+*.bak
 *~
 .DS_Store
 Thumbs.db

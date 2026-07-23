@@ -1,0 +1,55 @@
+make CONFIG=tests test-binary
+make[1]: Entering directory '<FIXTURE_ROOT>'
+python3 tools/generate_build_files.py --platform linux --configuration tests \
+	--telemetry 0 --fast-filter 1 --output generated
+python3 tools/generate_build_files.py --platform linux --configuration tests \
+	--telemetry 0 --fast-filter 1 --output generated
+mkdir -p build/tests/src/configuration/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/configuration/configuration.c -o build/tests/src/configuration/configuration.o
+mkdir -p build/tests/src/core/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/core/application.c -o build/tests/src/core/application.o
+mkdir -p build/tests/src/core/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/core/diagnostics.c -o build/tests/src/core/diagnostics.o
+mkdir -p build/tests/src/core/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/core/state_machine.c -o build/tests/src/core/state_machine.o
+mkdir -p build/tests/src/drivers/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/drivers/sensor_driver.c -o build/tests/src/drivers/sensor_driver.o
+mkdir -p build/tests/src/drivers/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/drivers/transport_driver.c -o build/tests/src/drivers/transport_driver.o
+mkdir -p build/tests/src/platform/common/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/platform/common/platform_common.c -o build/tests/src/platform/common/platform_common.o
+mkdir -p build/tests/src/routing/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/routing/router.c -o build/tests/src/routing/router.o
+mkdir -p build/tests/src/shared/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/shared/checksum.c -o build/tests/src/shared/checksum.o
+mkdir -p build/tests/src/shared/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/shared/conversion.c -o build/tests/src/shared/conversion.o
+mkdir -p build/tests/src/include_cycle/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/include_cycle/cycle_user.c -o build/tests/src/include_cycle/cycle_user.o
+mkdir -p build/tests/third_party/src/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c third_party/src/vendor_stub.c -o build/tests/third_party/src/vendor_stub.o
+python3 tools/generate_build_files.py --platform linux --configuration tests \
+	--telemetry 0 --fast-filter 1 --output generated
+mkdir -p build/tests/generated/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c generated/version_info.c -o build/tests/generated/version_info.o
+mkdir -p build/tests/src/platform/linux/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c src/platform/linux/platform_linux.c -o build/tests/src/platform/linux/platform_linux.o
+mkdir -p build/tests/tests/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c tests/test_main.c -o build/tests/tests/test_main.o
+mkdir -p build/tests/tests/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c tests/test_router.c -o build/tests/tests/test_router.o
+mkdir -p build/tests/tests/
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c tests/test_state_machine.c -o build/tests/tests/test_state_machine.o
+make -C src/plugins ROOT=<FIXTURE_ROOT> CONFIG=tests BUILD_DIR=<FIXTURE_ROOT>/build/tests \
+	CC='gcc' USE_COMPILER_WRAPPER=0 V=1 all
+make[2]: Entering directory '<FIXTURE_ROOT>/src/plugins'
+mkdir -p <FIXTURE_ROOT>/build/tests/plugins/
+env FIXTURE_MODULE=plugins gcc -I<FIXTURE_ROOT>/include -I<FIXTURE_ROOT>/generated -isystem <FIXTURE_ROOT>/third_party/include -include <FIXTURE_ROOT>/generated/build_config.h -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c plugin_registry.c -o <FIXTURE_ROOT>/build/tests/plugins/plugin_registry.o
+mkdir -p <FIXTURE_ROOT>/build/tests/plugins/
+env FIXTURE_MODULE=plugins gcc -I<FIXTURE_ROOT>/include -I<FIXTURE_ROOT>/generated -isystem <FIXTURE_ROOT>/third_party/include -include <FIXTURE_ROOT>/generated/build_config.h -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c plugin_alpha.c -o <FIXTURE_ROOT>/build/tests/plugins/plugin_alpha.o
+mkdir -p <FIXTURE_ROOT>/build/tests/plugins/
+env FIXTURE_MODULE=plugins gcc -I<FIXTURE_ROOT>/include -I<FIXTURE_ROOT>/generated -isystem <FIXTURE_ROOT>/third_party/include -include <FIXTURE_ROOT>/generated/build_config.h -DPLATFORM_LINUX -DUNIT_TEST -DFEATURE_TELEMETRY=0 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O1 -c plugin_beta.c -o <FIXTURE_ROOT>/build/tests/plugins/plugin_beta.o
+ar rcs <FIXTURE_ROOT>/build/tests/libplugins.a <FIXTURE_ROOT>/build/tests/plugins/plugin_registry.o <FIXTURE_ROOT>/build/tests/plugins/plugin_alpha.o <FIXTURE_ROOT>/build/tests/plugins/plugin_beta.o
+make[2]: Leaving directory '<FIXTURE_ROOT>/src/plugins'
+gcc build/tests/src/configuration/configuration.o build/tests/src/core/application.o build/tests/src/core/diagnostics.o build/tests/src/core/state_machine.o build/tests/src/drivers/sensor_driver.o build/tests/src/drivers/transport_driver.o build/tests/src/platform/common/platform_common.o build/tests/src/routing/router.o build/tests/src/shared/checksum.o build/tests/src/shared/conversion.o build/tests/src/include_cycle/cycle_user.o build/tests/third_party/src/vendor_stub.o build/tests/generated/version_info.o build/tests/src/platform/linux/platform_linux.o build/tests/tests/test_main.o build/tests/tests/test_router.o build/tests/tests/test_state_machine.o build/tests/libplugins.a  -o build/tests/fixture_tests
+make[1]: Leaving directory '<FIXTURE_ROOT>'

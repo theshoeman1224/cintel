@@ -3,6 +3,8 @@ from cintel.ports.commands import CommandRunner
 from cintel.ports.services import (
     AIProvider,
     BuildDiscoveryProvider,
+    CompilerCommandParser,
+    CompilerMetadataProvider,
     CompilerProvider,
     InputGuidanceProvider,
     RepositoryDiscoveryProvider,
@@ -16,6 +18,8 @@ __all__ = [
     "AnalysisStorage",
     "ArtifactWriter",
     "BuildDiscoveryProvider",
+    "CompilerCommandParser",
+    "CompilerMetadataProvider",
     "CommandRunner",
     "CompilerProvider",
     "InputGuidanceProvider",

@@ -1,0 +1,4 @@
+python3 tools/generate_build_files.py --platform linux --configuration linux \
+	--telemetry 1 --fast-filter 1 --output generated
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DLEGACY_MODE -ULEGACY_MODE -DPLATFORM_LINUX -DFEATURE_TELEMETRY=1 -DUSE_FAST_FILTER=1 -DCHECKSUM_WIDTH=32 -std=c11 -g -Wall -Wextra -Wpedantic -fPIC -MMD -MP -O2 -include generated/external_site_config.h \
+	-c src/configuration/configuration.c -o build/linux/missing-input-demo.o

@@ -1,0 +1,6 @@
+/build/
+/local.mk
+/generated/build_config.h
+/generated/version_info.c
+/generated/.*.tmp
+/wrapper-invocations.log
