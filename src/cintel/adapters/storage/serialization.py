@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from enum import Enum
 
@@ -20,26 +19,19 @@ from cintel.domain.models import (
     CompilerArgumentSet,
     CompilerInvocation,
     IncludePath,
+    InputArtifact,
+    InputArtifactType,
+    ArtifactValidationStatus,
     MacroDefinition,
     PathReference,
     RawBuildCommand,
+    StalenessStatus,
 )
-
-_SECRET_NAME = re.compile(
-    r"(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL|AUTH)(?:_|$)",
-    re.IGNORECASE,
-)
+from cintel.utilities.secrets import is_sensitive_name
 
 
 def sanitized_json(value: object, configuration: BuildConfiguration) -> str:
-    secret_values = tuple(
-        item_value
-        for name, item_value in (
-            *configuration.make_variables,
-            *configuration.environment_overrides,
-        )
-        if item_value and _SECRET_NAME.search(name)
-    )
+    secret_values = _secret_values(configuration)
 
     def sanitize(item: object) -> object:
         if isinstance(item, dict):
@@ -47,22 +39,14 @@ def sanitized_json(value: object, configuration: BuildConfiguration) -> str:
         if isinstance(item, (list, tuple)):
             return [sanitize(value) for value in item]
         if isinstance(item, str):
-            for secret in secret_values:
-                item = item.replace(secret, "***REDACTED***")
-            return item
+            return _redact_secret_values(item, secret_values)
         return item
 
-    return json.dumps(sanitize(value), default=_json_default, sort_keys=True)
+    return json.dumps(sanitize(value), default=json_default, sort_keys=True)
 
 
 def redact_text(value: str, configuration: BuildConfiguration) -> str:
-    for name, secret in (
-        *configuration.make_variables,
-        *configuration.environment_overrides,
-    ):
-        if secret and _SECRET_NAME.search(name):
-            value = value.replace(secret, "***REDACTED***")
-    return value
+    return _redact_secret_values(value, _secret_values(configuration))
 
 
 def build_configuration_from_dict(data: dict) -> BuildConfiguration:
@@ -99,7 +83,7 @@ def build_result_from_dict(data: dict) -> BuildDiscoveryResult:
                 working_directory=item["working_directory"],
                 classification=item["classification"],
                 parse_diagnostic=(
-                    _diagnostic_from_dict(item["parse_diagnostic"])
+                    diagnostic_from_dict(item["parse_diagnostic"])
                     if item.get("parse_diagnostic")
                     else None
                 ),
@@ -115,7 +99,7 @@ def build_result_from_dict(data: dict) -> BuildDiscoveryResult:
             for item in data.get("compilation_units", ())
         ),
         diagnostics=tuple(
-            _diagnostic_from_dict(item) for item in data.get("diagnostics", ())
+            diagnostic_from_dict(item) for item in data.get("diagnostics", ())
         ),
         capabilities=tuple(
             _capability_from_dict(item) for item in data.get("capabilities", ())
@@ -146,12 +130,29 @@ def compilation_unit_from_dict(data: dict) -> CompilationUnit:
     )
 
 
-def _json_default(value: object) -> object:
+def json_default(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Enum):
         return value.value
     raise TypeError(f"Cannot serialize {type(value).__name__}")
+
+
+def _secret_values(configuration: BuildConfiguration) -> tuple[str, ...]:
+    return tuple(
+        value
+        for name, value in (
+            *configuration.make_variables,
+            *configuration.environment_overrides,
+        )
+        if value and is_sensitive_name(name)
+    )
+
+
+def _redact_secret_values(value: str, secrets: tuple[str, ...]) -> str:
+    for secret in secrets:
+        value = value.replace(secret, "***REDACTED***")
+    return value
 
 
 def _path_reference_from_dict(data: dict | None) -> PathReference | None:
@@ -165,7 +166,7 @@ def _required_path_reference(data: dict) -> PathReference:
     return result
 
 
-def _diagnostic_from_dict(data: dict) -> Diagnostic:
+def diagnostic_from_dict(data: dict) -> Diagnostic:
     return Diagnostic(
         code=data["code"],
         severity=DiagnosticSeverity(data["severity"]),
@@ -225,7 +226,7 @@ def _compiler_invocation_from_dict(data: dict) -> CompilerInvocation:
             ),
         ),
         parse_diagnostics=tuple(
-            _diagnostic_from_dict(item) for item in data.get("parse_diagnostics", ())
+            diagnostic_from_dict(item) for item in data.get("parse_diagnostics", ())
         ),
     )
 
@@ -236,4 +237,24 @@ def _capability_from_dict(data: dict) -> AnalysisCapability:
         status=CapabilityStatus(data["status"]),
         reason=data["reason"],
         evidence=tuple(data.get("evidence", ())),
+    )
+
+
+def input_artifact_from_dict(data: dict) -> InputArtifact:
+    return InputArtifact(
+        id=data["id"],
+        repository_id=data["repository_id"],
+        artifact_type=InputArtifactType(data["artifact_type"]),
+        file_path=data["file_path"],
+        source=data["source"],
+        command_used=(
+            tuple(data["command_used"]) if data.get("command_used") is not None else None
+        ),
+        working_directory=data.get("working_directory"),
+        content_hash=data["content_hash"],
+        creation_time=datetime.fromisoformat(data["creation_time"]),
+        validation_status=ArtifactValidationStatus(data["validation_status"]),
+        validation_messages=tuple(data.get("validation_messages", ())),
+        build_configuration_id=data.get("build_configuration_id"),
+        staleness_status=StalenessStatus(data["staleness_status"]),
     )

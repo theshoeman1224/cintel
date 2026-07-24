@@ -8,10 +8,16 @@ from cintel.adapters.storage import SCHEMA_VERSION, SQLiteAnalysisStorage
 from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity
 from cintel.domain.models import (
     AnalysisCapability,
+    ArtifactValidationStatus,
     CapabilityStatus,
     FileKind,
+    InputArtifact,
+    InputArtifactType,
     Repository,
     RepositoryFile,
+    StalenessStatus,
+    WorkflowState,
+    WorkflowStatus,
 )
 
 
@@ -102,6 +108,46 @@ class SQLiteStorageTests(unittest.TestCase):
             storage = SQLiteAnalysisStorage(database)
             storage.initialize()
 
-            self.assertEqual(3, storage.schema_version())
+            self.assertEqual(4, storage.schema_version())
             self.assertEqual((), storage.list_repository_files("repository-1"))
+            storage.close()
+
+    def test_persists_input_artifacts_and_workflow_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            storage = SQLiteAnalysisStorage(Path(directory) / "index.sqlite")
+            storage.initialize()
+            repository = Repository(
+                id="repository-1",
+                root="/repo",
+                name="repo",
+                created_at=datetime.now(timezone.utc),
+            )
+            storage.save_repository(repository)
+            artifact = InputArtifact(
+                id="artifact-1",
+                repository_id=repository.id,
+                artifact_type=InputArtifactType.MAKE_DRY_RUN,
+                file_path="/input/make.txt",
+                source="/source/make.txt",
+                command_used=("make", "-n"),
+                working_directory="/repo",
+                content_hash="a" * 64,
+                creation_time=datetime.now(timezone.utc),
+                validation_status=ArtifactValidationStatus.VALID,
+                validation_messages=("valid",),
+                build_configuration_id="build-1",
+                staleness_status=StalenessStatus.CURRENT,
+            )
+            state = WorkflowState(
+                repository_id=repository.id,
+                stage="input_validation",
+                status=WorkflowStatus.COMPLETED,
+                updated_at=datetime.now(timezone.utc),
+                details=(("artifact", artifact.id),),
+            )
+            storage.save_input_artifact(artifact)
+            storage.save_workflow_state(state)
+
+            self.assertEqual((artifact,), storage.list_input_artifacts(repository.id))
+            self.assertEqual((state,), storage.list_workflow_states(repository.id))
             storage.close()

@@ -67,6 +67,11 @@ make -n -B missing-input-demo V=1
 `tools/verify_fixture.py` regenerates saved outputs under `expected/sample_inputs/` and
 normalizes the fixture root to `<FIXTURE_ROOT>`.
 
+The same directory contains validated Phase 4 recovery examples: a verbose build log,
+source-oriented file list, dependency file, preprocessed C source, and macro listing.
+These allow every supported input-artifact validator to run without a network or a
+complete external build environment.
+
 ## Generated files
 
 `tools/generate_build_files.py` reads the two templates and creates
@@ -121,3 +126,28 @@ python3 tests/fixtures/complex_c_project/tools/validate_cintel_results.py \
 
 The validator reports unsupported current-phase source findings separately from missing
 supported findings; it does not silently turn unsupported capabilities into passes.
+
+## Guided recovery
+
+Generate safe recovery instructions without executing Make:
+
+```bash
+PYTHONPATH=src python3 -m cintel --repository tests/fixtures/complex_c_project \
+  --output-directory /tmp/cintel-complex-fixture --makefile Makefile \
+  --target linux --build-config linux setup
+```
+
+Import saved dry-run output and resume build discovery:
+
+```bash
+PYTHONPATH=src python3 -m cintel --repository tests/fixtures/complex_c_project \
+  --output-directory /tmp/cintel-complex-fixture --makefile Makefile \
+  --target linux --build-config linux \
+  --input-file tests/fixtures/complex_c_project/expected/sample_inputs/make-linux-dry-run.txt \
+  resume
+```
+
+Imported evidence is copied under the configured `input/` directory, SHA-256 hashed,
+validated, persisted in SQLite, and checked for later modification. Invalid or stale
+evidence is reported with `CI-INPUT-002` or `CI-INPUT-003`; repository scanning remains
+available when build-aware analysis cannot resume.

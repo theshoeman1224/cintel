@@ -68,6 +68,22 @@ class StalenessStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class InputArtifactType(StrEnum):
+    MAKE_DRY_RUN = "make_dry_run"
+    BUILD_LOG = "build_log"
+    FILE_LIST = "file_list"
+    DEPENDENCY_FILE = "dependency_file"
+    PREPROCESSED_SOURCE = "preprocessed_source"
+    MACRO_LISTING = "macro_listing"
+
+
+class WorkflowStatus(StrEnum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    REDUCED = "reduced"
+
+
 class CommandRisk(StrEnum):
     READ_ONLY = "read_only"
     MAKEFILE_EVALUATION = "makefile_evaluation"
@@ -336,7 +352,8 @@ class AnalysisResult:
 @dataclass(frozen=True, slots=True)
 class InputArtifact:
     id: str
-    artifact_type: str
+    repository_id: str
+    artifact_type: InputArtifactType
     file_path: str
     source: str
     command_used: tuple[str, ...] | None
@@ -350,6 +367,15 @@ class InputArtifact:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowState:
+    repository_id: str
+    stage: str
+    status: WorkflowStatus
+    updated_at: datetime
+    details: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class CommandInstruction:
     title: str
     reason: str
@@ -360,6 +386,20 @@ class CommandInstruction:
     validation_steps: tuple[str, ...]
     resume_command: tuple[str, ...]
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryResult:
+    repository_id: str
+    status: WorkflowStatus
+    artifacts: tuple[InputArtifact, ...]
+    diagnostics: tuple[Diagnostic, ...]
+    instructions: tuple[CommandInstruction, ...]
+    capabilities: tuple[AnalysisCapability, ...]
+    completed_stages: tuple[str, ...]
+    interrupted_stage: str | None = None
+    required_inputs_report: str | None = None
+    build_result: BuildDiscoveryResult | None = None
 
 
 @dataclass(frozen=True, slots=True)

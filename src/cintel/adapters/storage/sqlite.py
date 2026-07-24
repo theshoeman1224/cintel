@@ -15,18 +15,23 @@ from cintel.domain.models import (
     CompilationUnit,
     FileKind,
     GeneratedReportMetadata,
+    InputArtifact,
     Repository,
     RepositoryFile,
+    WorkflowState,
+    WorkflowStatus,
 )
 from cintel.adapters.storage.serialization import (
     build_configuration_from_dict,
     build_result_from_dict,
     compilation_unit_from_dict,
+    diagnostic_from_dict,
+    input_artifact_from_dict,
+    json_default,
     redact_text,
     sanitized_json,
 )
-
-SCHEMA_VERSION = 3
+from cintel.adapters.storage.migrations import SCHEMA_VERSION, migrate
 
 
 class SQLiteAnalysisStorage:
@@ -50,14 +55,7 @@ class SQLiteAnalysisStorage:
                 raise StorageError(
                     f"Database schema {current} is newer than supported {SCHEMA_VERSION}"
                 )
-            if current < 1:
-                self._migrate_to_v1(connection)
-                current = 1
-            if current < 2:
-                self._migrate_to_v2(connection)
-                current = 2
-            if current < 3:
-                self._migrate_to_v3(connection)
+            migrate(connection, current)
             connection.commit()
         except sqlite3.Error as exc:
             raise StorageError(f"Unable to initialize {self._database_path}: {exc}") from exc
@@ -196,6 +194,14 @@ class SQLiteAnalysisStorage:
                             "recoverability": item.recoverability.value,
                             "suggested_actions": item.suggested_actions,
                             "related_paths": item.related_paths,
+                            "related_commands": tuple(
+                                {
+                                    "arguments": command.arguments,
+                                    "working_directory": command.working_directory,
+                                }
+                                for command in item.related_commands
+                            ),
+                            "metadata": item.metadata,
                         },
                         sort_keys=True,
                     ),
@@ -412,139 +418,97 @@ class SQLiteAnalysisStorage:
         rows = self._connect().execute(query, tuple(arguments)).fetchall()
         return tuple(compilation_unit_from_dict(json.loads(row[0])) for row in rows)
 
+    def list_diagnostics(
+        self, repository_id: str, context_prefix: str | None = None
+    ) -> tuple[Diagnostic, ...]:
+        query = "SELECT code, severity, message, payload FROM diagnostics WHERE repository_id = ?"
+        arguments: list[str] = [repository_id]
+        if context_prefix is not None:
+            query += " AND context_key LIKE ?"
+            arguments.append(f"{context_prefix}%")
+        query += " ORDER BY id"
+        rows = self._connect().execute(query, tuple(arguments)).fetchall()
+        results = []
+        for code, severity, message, payload in rows:
+            data = json.loads(payload)
+            data.update({"code": code, "severity": severity, "message": message})
+            results.append(diagnostic_from_dict(data))
+        return tuple(results)
+
+    def save_input_artifact(self, artifact: InputArtifact) -> None:
+        self._connect().execute(
+            """
+            INSERT INTO input_artifacts
+              (id, repository_id, artifact_type, file_path, content_hash,
+               validation_status, staleness_status, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              file_path=excluded.file_path,
+              validation_status=excluded.validation_status,
+              staleness_status=excluded.staleness_status,
+              payload=excluded.payload
+            """,
+            (
+                artifact.id,
+                artifact.repository_id,
+                artifact.artifact_type.value,
+                artifact.file_path,
+                artifact.content_hash,
+                artifact.validation_status.value,
+                artifact.staleness_status.value,
+                json.dumps(asdict(artifact), default=json_default, sort_keys=True),
+            ),
+        )
+        self._connect().commit()
+
+    def list_input_artifacts(self, repository_id: str) -> tuple[InputArtifact, ...]:
+        rows = self._connect().execute(
+            "SELECT payload FROM input_artifacts WHERE repository_id = ? ORDER BY id",
+            (repository_id,),
+        ).fetchall()
+        return tuple(input_artifact_from_dict(json.loads(row[0])) for row in rows)
+
+    def save_workflow_state(self, state: WorkflowState) -> None:
+        self._connect().execute(
+            """
+            INSERT INTO workflow_state (repository_id, stage, status, updated_at, payload)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(repository_id, stage) DO UPDATE SET
+              status=excluded.status,
+              updated_at=excluded.updated_at,
+              payload=excluded.payload
+            """,
+            (
+                state.repository_id,
+                state.stage,
+                state.status.value,
+                state.updated_at.isoformat(),
+                json.dumps(dict(state.details), sort_keys=True),
+            ),
+        )
+        self._connect().commit()
+
+    def list_workflow_states(self, repository_id: str) -> tuple[WorkflowState, ...]:
+        rows = self._connect().execute(
+            """
+            SELECT repository_id, stage, status, updated_at, payload
+            FROM workflow_state WHERE repository_id = ? ORDER BY updated_at, stage
+            """,
+            (repository_id,),
+        ).fetchall()
+        return tuple(
+            WorkflowState(
+                repository_id=row[0],
+                stage=row[1],
+                status=WorkflowStatus(row[2]),
+                updated_at=datetime.fromisoformat(row[3]),
+                details=tuple(sorted(json.loads(row[4]).items())),
+            )
+            for row in rows
+        )
+
     def _connect(self) -> sqlite3.Connection:
         if self._connection is None:
             self._connection = sqlite3.connect(self._database_path)
             self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
-
-    @staticmethod
-    def _migrate_to_v1(connection: sqlite3.Connection) -> None:
-        connection.executescript(
-            """
-            CREATE TABLE repositories (
-                id TEXT PRIMARY KEY,
-                root TEXT NOT NULL UNIQUE,
-                name TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE diagnostics (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                code TEXT NOT NULL,
-                severity TEXT NOT NULL,
-                message TEXT NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE TABLE capabilities (
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                name TEXT NOT NULL,
-                status TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                evidence TEXT NOT NULL,
-                PRIMARY KEY (repository_id, name)
-            );
-            CREATE TABLE workflow_state (
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                stage TEXT NOT NULL,
-                status TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                PRIMARY KEY (repository_id, stage)
-            );
-            INSERT INTO schema_metadata (key, value) VALUES ('schema_version', '1');
-            """
-        )
-
-    @staticmethod
-    def _migrate_to_v2(connection: sqlite3.Connection) -> None:
-        connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS repository_files (
-                id TEXT PRIMARY KEY,
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                relative_path TEXT NOT NULL,
-                absolute_path TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                size INTEGER NOT NULL,
-                modified_at TEXT NOT NULL,
-                content_sha256 TEXT NOT NULL,
-                UNIQUE (repository_id, relative_path)
-            );
-            CREATE INDEX IF NOT EXISTS repository_files_kind_idx
-                ON repository_files (repository_id, kind);
-            CREATE TABLE IF NOT EXISTS generated_reports (
-                id TEXT PRIMARY KEY,
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                report_name TEXT NOT NULL,
-                format TEXT NOT NULL,
-                file_path TEXT NOT NULL,
-                content_sha256 TEXT NOT NULL,
-                generated_at TEXT NOT NULL,
-                UNIQUE (repository_id, report_name, format)
-            );
-            UPDATE schema_metadata SET value = '2' WHERE key = 'schema_version';
-            """
-        )
-
-    @staticmethod
-    def _migrate_to_v3(connection: sqlite3.Connection) -> None:
-        columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(diagnostics)")
-        }
-        if "context_key" not in columns:
-            connection.execute(
-                "ALTER TABLE diagnostics ADD COLUMN context_key TEXT NOT NULL DEFAULT 'general'"
-            )
-        connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS build_configurations (
-                id TEXT PRIMARY KEY,
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                name TEXT NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS build_configurations_repository_idx
-                ON build_configurations (repository_id, name);
-            CREATE TABLE IF NOT EXISTS build_discovery_runs (
-                input_fingerprint TEXT PRIMARY KEY,
-                build_configuration_id TEXT NOT NULL
-                    REFERENCES build_configurations(id),
-                build_fingerprint TEXT NOT NULL,
-                discovered_at TEXT NOT NULL,
-                exit_code INTEGER NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS compiler_invocations (
-                id TEXT PRIMARY KEY,
-                build_configuration_id TEXT NOT NULL
-                    REFERENCES build_configurations(id),
-                working_directory TEXT NOT NULL,
-                source_path TEXT,
-                payload TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS compilation_units (
-                id TEXT PRIMARY KEY,
-                repository_id TEXT NOT NULL REFERENCES repositories(id),
-                build_configuration_id TEXT NOT NULL
-                    REFERENCES build_configurations(id),
-                source_file_id TEXT,
-                fingerprint TEXT NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS compilation_units_source_idx
-                ON compilation_units (repository_id, source_file_id);
-            CREATE TABLE IF NOT EXISTS build_commands (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                build_configuration_id TEXT NOT NULL
-                    REFERENCES build_configurations(id),
-                sequence INTEGER NOT NULL,
-                working_directory TEXT NOT NULL,
-                classification TEXT NOT NULL,
-                raw_content TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                UNIQUE (build_configuration_id, sequence)
-            );
-            UPDATE schema_metadata SET value = '3' WHERE key = 'schema_version';
-            """
-        )

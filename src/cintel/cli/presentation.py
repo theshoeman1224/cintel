@@ -9,7 +9,7 @@ from typing import Any
 
 from cintel.application.initialization import InitializationResult
 from cintel.application.scanning import ScanWorkflowResult
-from cintel.domain.models import DoctorReport
+from cintel.domain.models import DoctorReport, RecoveryResult
 from cintel.domain.models import BuildDiscoveryResult, CompilationUnit
 
 
@@ -147,6 +147,31 @@ def render_compilation_units(
                 f"  Arguments: {shlex.join(invocation.raw_arguments)}",
             )
         )
+    return "\n".join(lines)
+
+
+def render_recovery(result: RecoveryResult, as_json: bool = False) -> str:
+    if as_json:
+        return _json(result)
+    lines = [
+        f"Recovery status: {result.status.value}",
+        f"Validated artifacts: {sum(item.validation_status.value == 'valid' for item in result.artifacts)}",
+        f"Tracked artifacts: {len(result.artifacts)}",
+        f"Instructions: {len(result.instructions)}",
+        f"Required-input report: {result.required_inputs_report}",
+    ]
+    if result.completed_stages:
+        lines.append("Completed stages: " + ", ".join(result.completed_stages))
+    for diagnostic in result.diagnostics:
+        lines.append(
+            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
+        )
+    for instruction in result.instructions:
+        lines.append(
+            f"Next: {instruction.title} ({instruction.risk.value}) in {instruction.working_directory}"
+        )
+    if result.build_result is not None:
+        lines.append(f"Recovered compilation units: {len(result.build_result.compilation_units)}")
     return "\n".join(lines)
 
 

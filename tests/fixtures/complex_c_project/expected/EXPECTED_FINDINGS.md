@@ -92,3 +92,13 @@ simulation and excludes telemetry. Tests select Linux platform support, omit pro
 Function pointers, macro-generated functions, weak-symbol replacement, preprocessor
 branch semantics, assembly, link-time behavior, and runtime dispatch are deliberately
 represented without claims of complete semantic resolution.
+
+## 15. Guided recovery
+
+Phase 4 must produce a non-executing `REQUIRED_INPUTS.md`, validate all six saved
+artifact types, import the saved Linux dry-run through the normal Make parser, preserve
+artifact hashes and workflow stages in SQLite, reject empty input with `CI-INPUT-002`,
+and detect later modification with `CI-INPUT-003`. Importing the
+`missing-input-demo` dry-run must retain `CI-BUILD-005` and generate an exact read-only
+`find` instruction for `generated/external_site_config.h`. Secret Make variables must
+not appear in guidance or persisted command provenance.

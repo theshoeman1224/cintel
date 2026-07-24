@@ -68,11 +68,13 @@ class DoctorService:
                     recoverability=Recoverability.REDUCED_CAPABILITY,
                     suggested_actions=(
                         "Install GNU Make without requiring cintel to run as root, "
-                        "or later import saved dry-run output.",
+                        "or import saved dry-run output with --input-file.",
                     ),
                 )
             )
-            actions.append("Continue with repository-only analysis when Phase 2 is available.")
+            actions.append(
+                "Run `cintel setup`, then capture Make output on a compatible system and import it with `cintel resume`."
+            )
 
         if not gcc_available:
             diagnostics.append(
@@ -139,6 +141,15 @@ class DoctorService:
                 name="offline_deterministic_analysis",
                 status=CapabilityStatus.AVAILABLE,
                 reason="The core uses local files and standard-library adapters only.",
+            ),
+            AnalysisCapability(
+                name="guided_input_recovery",
+                status=CapabilityStatus.AVAILABLE if writable else CapabilityStatus.UNAVAILABLE,
+                reason=(
+                    "Validated artifacts and resumable workflow state can be stored locally."
+                    if writable
+                    else "Guided recovery requires a writable output directory."
+                ),
             ),
             AnalysisCapability(
                 name="ai_generation",

@@ -109,32 +109,55 @@ class BuildDiscoveryService:
                 if cached is not None:
                     return replace(cached, from_cache=True)
             result = self._provider.discover(configuration)
-            selected = {
-                str(Path(path).resolve(strict=False))
-                for path in result.selected_source_files
-            }
-            repository_sources = {
-                str(Path(item.absolute_path).resolve(strict=False))
-                for item in storage.list_repository_files(
-                    configuration.repository_id
-                )
-                if item.kind is FileKind.C_SOURCE
-            }
-            result = replace(
-                result,
-                selected_source_files=tuple(sorted(selected)),
-                excluded_source_files=tuple(sorted(repository_sources - selected)),
-            )
-            storage.save_build_discovery(result)
-            storage.save_diagnostics(
-                configuration.repository_id,
-                result.diagnostics,
-                context=f"build:{configuration.id}",
-            )
-            storage.save_capabilities(configuration.repository_id, result.capabilities)
-            return result
+            return self._complete_and_save(storage, result)
         finally:
             storage.close()
+
+    def discover_saved(
+        self,
+        app_config: AppConfig,
+        configuration: BuildConfiguration,
+        raw_output: str,
+        artifact_hash: str,
+    ) -> BuildDiscoveryResult:
+        storage = self._storage_factory(Path(app_config.database_path))
+        try:
+            storage.initialize()
+            result = self._provider.discover_from_output(
+                configuration,
+                raw_output,
+                artifact_hash=artifact_hash,
+            )
+            return self._complete_and_save(storage, result)
+        finally:
+            storage.close()
+
+    def _complete_and_save(
+        self, storage: AnalysisStorage, result: BuildDiscoveryResult
+    ) -> BuildDiscoveryResult:
+        configuration = result.configuration
+        selected = {
+            str(Path(path).resolve(strict=False))
+            for path in result.selected_source_files
+        }
+        repository_sources = {
+            str(Path(item.absolute_path).resolve(strict=False))
+            for item in storage.list_repository_files(configuration.repository_id)
+            if item.kind is FileKind.C_SOURCE
+        }
+        result = replace(
+            result,
+            selected_source_files=tuple(sorted(selected)),
+            excluded_source_files=tuple(sorted(repository_sources - selected)),
+        )
+        storage.save_build_discovery(result)
+        storage.save_diagnostics(
+            configuration.repository_id,
+            result.diagnostics,
+            context=f"build:{configuration.id}",
+        )
+        storage.save_capabilities(configuration.repository_id, result.capabilities)
+        return result
 
     def list_units(
         self, app_config: AppConfig, build_configuration_name: str | None = None

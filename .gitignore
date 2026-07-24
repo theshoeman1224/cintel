@@ -42,6 +42,7 @@ pip-wheel-metadata/
 *.so
 *.so.*
 *.d
+!tests/fixtures/complex_c_project/expected/sample_inputs/*.d
 *.gcda
 *.gcno
 *.gcov

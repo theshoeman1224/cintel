@@ -2,6 +2,7 @@
 
 from typing import Any, Protocol
 
+from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
     AnalysisResult,
     BuildConfiguration,
@@ -11,6 +12,8 @@ from cintel.domain.models import (
     CompilationUnit,
     CompilerInvocation,
     ContextPackage,
+    InputArtifactType,
+    InputArtifact,
     RepositoryFile,
     RepositoryScan,
 )
@@ -22,6 +25,16 @@ class BuildDiscoveryProvider(Protocol):
     def input_fingerprint(self, configuration: BuildConfiguration) -> str: ...
 
     def command_request(self, configuration: BuildConfiguration) -> CommandRequest: ...
+
+    def discover_from_output(
+        self,
+        configuration: BuildConfiguration,
+        raw_output: str,
+        *,
+        raw_error: str = "",
+        exit_code: int = 0,
+        artifact_hash: str | None = None,
+    ) -> BuildDiscoveryResult: ...
 
 
 class CompilerCommandParser(Protocol):
@@ -67,8 +80,30 @@ class ReportRenderer(Protocol):
 
 class InputGuidanceProvider(Protocol):
     def instructions_for(
-        self, missing_capabilities: tuple[str, ...]
+        self,
+        repository_root: str,
+        output_directory: str,
+        diagnostics: tuple[Diagnostic, ...],
+        build_configuration: BuildConfiguration | None = None,
     ) -> tuple[CommandInstruction, ...]: ...
+
+
+class InputArtifactProvider(Protocol):
+    def import_artifact(
+        self,
+        source_path: str,
+        artifact_type: InputArtifactType,
+        destination_directory: str,
+        repository_id: str,
+        repository_root: str,
+        build_configuration_id: str | None = None,
+        command_used: tuple[str, ...] | None = None,
+        working_directory: str | None = None,
+    ) -> InputArtifact: ...
+
+    def refresh_staleness(self, artifact: InputArtifact) -> InputArtifact: ...
+
+    def read_text(self, artifact: InputArtifact) -> str: ...
 
 
 class AIProvider(Protocol):
