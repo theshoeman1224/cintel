@@ -7,8 +7,10 @@ from cintel.domain.models import (
     BuildDiscoveryResult,
     CompilationUnit,
     GeneratedReportMetadata,
+    InputArtifact,
     Repository,
     RepositoryFile,
+    WorkflowState,
 )
 
 
@@ -55,3 +57,15 @@ class AnalysisStorage(Protocol):
     def list_compilation_units(
         self, repository_id: str, build_configuration_name: str | None = None
     ) -> tuple[CompilationUnit, ...]: ...
+
+    def list_diagnostics(
+        self, repository_id: str, context_prefix: str | None = None
+    ) -> tuple[Diagnostic, ...]: ...
+
+    def save_input_artifact(self, artifact: InputArtifact) -> None: ...
+
+    def list_input_artifacts(self, repository_id: str) -> tuple[InputArtifact, ...]: ...
+
+    def save_workflow_state(self, state: WorkflowState) -> None: ...
+
+    def list_workflow_states(self, repository_id: str) -> tuple[WorkflowState, ...]: ...

@@ -35,6 +35,9 @@ class DoctorTests(unittest.TestCase):
             )
             self.assertTrue(report.output_directory_writable)
             self.assertTrue(any(item.name == "ai_generation" for item in report.capabilities))
+            self.assertTrue(
+                any(item.name == "guided_input_recovery" for item in report.capabilities)
+            )
 
     def test_missing_makefile_is_structured_diagnostic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

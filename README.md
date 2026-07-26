@@ -3,11 +3,12 @@
 Legacy C Code Intelligence (`cintel`) is an offline-first command-line
 application for turning legacy C repositories into structured, build-aware
 knowledge for developers and coding agents. The current codebase implements
-the Phase 1 foundation and Phase 2 repository inventory: initialization,
+the Phase 1 foundation through Phase 4 guided recovery: initialization,
 environment diagnostics, recursive C/build-input discovery, incremental
 SHA-256 hashing, GNU Make dry-run build discovery, compiler-command
-normalization, SQLite state, deterministic Markdown/JSON inventory reports,
-configuration, and dependency composition.
+normalization, validated input artifacts, resumable workflow state, SQLite
+state, deterministic Markdown/JSON inventory reports, configuration, and
+dependency composition.
 
 It does not send source code externally. AI is disabled by default, and the
 deterministic analysis architecture does not depend on an AI model.
@@ -43,6 +44,11 @@ cintel --repository /path/to/legacy-c-repository \
   --make-var MODE=debug --non-interactive build discover
 cintel --repository /path/to/legacy-c-repository \
   --build-config debug build units
+cintel --repository /path/to/legacy-c-repository \
+  --makefile Makefile --target all --build-config debug setup
+cintel --repository /path/to/legacy-c-repository \
+  --makefile Makefile --target all --build-config debug \
+  --input-file /path/to/make-dry-run.txt resume
 ```
 
 Generated state is kept under `.code-intelligence/`. `init` will not overwrite
@@ -61,9 +67,32 @@ cintel --repository ./example analyze
 cintel --repository ./example report
 ```
 
-`scan` and the three `build` subcommands are implemented. Source analysis and
+`scan`, guided recovery, and the three `build` subcommands are implemented. Source analysis and
 general reports in the example above are planned behavior and are deliberately
 not exposed as successful no-ops.
+
+## Guided recovery and saved inputs
+
+`cintel setup` scans the repository and writes
+`.code-intelligence/REQUIRED_INPUTS.md` without executing the suggested commands.
+`cintel instructions` regenerates that report from persisted diagnostics.
+`cintel resume` validates an optional `--input-file`, records its SHA-256 hash and
+provenance, checks it for later staleness, and continues from completed stages.
+
+Supported `--input-type` values are `make_dry_run`, `build_log`, `file_list`,
+`dependency_file`, `preprocessed_source`, and `macro_listing`. A validated saved
+Make dry-run is parsed through the same adapter as live Make output and can also
+be supplied to `cintel build discover --input-file ...`.
+
+Invalid artifacts receive `CI-INPUT-002`; modified or configuration-mismatched
+artifacts receive `CI-INPUT-003`. Repository scanning remains usable when build
+evidence is unavailable. Imported evidence is copied beneath the configured
+`input/` directory. Command provenance redacts likely secret variables.
+
+Generated guidance warns that Make evaluation can execute `$(shell ...)`, real
+builds can modify files, environment/build logs can expose secrets, preprocessed
+source can contain proprietary code and absolute paths, and future AI providers
+must not receive source without explicit approval.
 
 ## Makefile discovery
 
@@ -171,16 +200,17 @@ include `.git`, `.code-intelligence`, and common build/object directories.
 SQLite stores a schema version in `schema_metadata`. Schema v2 adds repository
 file inventory and generated-report metadata. Schema v3 adds build
 configurations, discovery runs, raw build commands, compiler invocations, and
-compilation units. Migrations are applied
+compilation units. Schema v4 adds validated input artifacts and resumable
+workflow state. Migrations are applied
 incrementally by the storage adapter; a database newer than the application is
 rejected explicitly.
 
 ## Known MVP limitations
 
-The Phase 1 foundation, Phase 2 repository inventory, and Phase 3 Make build
-discovery are implemented. Conservative C parsing, relationships, guided
-artifact recovery, broader reports, context packages, and GCC enrichment
-belong to subsequent vertical slices.
+The Phase 1 foundation, Phase 2 repository inventory, Phase 3 Make build
+discovery, and Phase 4 guided recovery are implemented. Conservative C parsing,
+relationships, broader reports, context packages, and GCC enrichment belong to
+subsequent vertical slices.
 
 Even after those slices, conservative analysis will have known limitations:
 

@@ -168,3 +168,19 @@ class MakeDiscoveryTests(unittest.TestCase):
             self.assertIn("CI-BUILD-001", codes)
             self.assertIn("CI-COMP-001", codes)
             self.assertEqual("unavailable", result.capabilities[0].status.value)
+
+    def test_saved_output_uses_artifact_hash_in_fingerprints(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_text("all:\n", encoding="utf-8")
+            (root / "main.c").write_text("int main(void);\n", encoding="utf-8")
+            adapter = MakeBuildDiscovery(FakeRunner(""), GCCCompilerCommandParser())
+            first = adapter.discover_from_output(
+                configuration(root), "gcc -c main.c -o main.o\n", artifact_hash="a" * 64
+            )
+            second = adapter.discover_from_output(
+                configuration(root), "gcc -c main.c -o main.o\n", artifact_hash="b" * 64
+            )
+            self.assertEqual(1, len(first.compilation_units))
+            self.assertNotEqual(first.input_fingerprint, second.input_fingerprint)
+            self.assertNotEqual(first.build_fingerprint, second.build_fingerprint)

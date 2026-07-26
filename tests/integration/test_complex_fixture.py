@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -63,6 +64,155 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
         self.assertNotIn("src/legacy/unused_legacy_module.c", sources)
         self.assertGreaterEqual(len(result.compilation_units), 15)
         self.assertTrue(any(item.is_system for unit in result.compilation_units for item in unit.compiler_invocation.arguments.include_paths))
+
+    def test_phase_four_guidance_artifacts_resume_and_staleness(self) -> None:
+        samples = FIXTURE / "expected" / "sample_inputs"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "analysis"
+            common = [
+                "--repository", str(FIXTURE),
+                "--output-directory", str(output),
+                "--makefile", "Makefile",
+                "--target", "linux",
+                "--build-config", "linux",
+                "--make-var", "API_TOKEN=fixture-secret",
+                "--non-interactive",
+            ]
+
+            setup_output = io.StringIO()
+            with contextlib.redirect_stdout(setup_output):
+                self.assertEqual(0, cintel_main([*common, "setup"]))
+            required = output / "REQUIRED_INPUTS.md"
+            self.assertTrue(required.is_file())
+            guidance = required.read_text(encoding="utf-8")
+            self.assertIn("make -n -B", guidance)
+            self.assertIn("make -n may still execute", guidance)
+            self.assertIn("--input-file", guidance)
+            self.assertNotIn("fixture-secret", guidance)
+            self.assertIn("Preprocessed files may contain proprietary source", guidance)
+            self.assertIn("must not be sent to an AI provider", guidance)
+
+            instructions_output = io.StringIO()
+            with contextlib.redirect_stdout(instructions_output):
+                self.assertEqual(0, cintel_main([*common, "instructions"]))
+            self.assertIn("Required-input report:", instructions_output.getvalue())
+            json_output = io.StringIO()
+            with contextlib.redirect_stdout(json_output):
+                self.assertEqual(0, cintel_main([*common, "--json", "instructions"]))
+            self.assertEqual("reduced", json.loads(json_output.getvalue())["status"])
+
+            saved_build = io.StringIO()
+            with contextlib.redirect_stdout(saved_build):
+                saved_code = cintel_main(
+                    [
+                        *common,
+                        "--input-file", str(samples / "make-linux-dry-run.txt"),
+                        "build", "discover",
+                    ]
+                )
+            self.assertEqual(0, saved_code, saved_build.getvalue())
+            self.assertIn("Compilation units:", saved_build.getvalue())
+
+            inputs = {
+                "build_log": "verbose-build.log",
+                "file_list": "repository-files.txt",
+                "dependency_file": "application.d",
+                "preprocessed_source": "application.i",
+                "macro_listing": "macros.txt",
+            }
+            for artifact_type, filename in inputs.items():
+                captured = io.StringIO()
+                with contextlib.redirect_stdout(captured):
+                    code = cintel_main(
+                        [
+                            *common,
+                            "--input-type", artifact_type,
+                            "--input-file", str(samples / filename),
+                            "resume",
+                        ]
+                    )
+                self.assertEqual(0, code, captured.getvalue())
+
+            units = io.StringIO()
+            with contextlib.redirect_stdout(units):
+                self.assertEqual(
+                    0,
+                    cintel_main(
+                        [
+                            "--repository", str(FIXTURE),
+                            "--output-directory", str(output),
+                            "--build-config", "linux",
+                            "build", "units",
+                        ]
+                    ),
+                )
+            self.assertIn("src/core/application.c", units.getvalue())
+
+            invalid = root / "empty-make-output.txt"
+            invalid.write_text("", encoding="utf-8")
+            invalid_output = io.StringIO()
+            with contextlib.redirect_stdout(invalid_output):
+                invalid_code = cintel_main(
+                    [*common, "--input-file", str(invalid), "resume"]
+                )
+            self.assertEqual(2, invalid_code)
+            self.assertIn("CI-INPUT-002", invalid_output.getvalue())
+
+            connection = sqlite3.connect(output / "index.sqlite")
+            rows = connection.execute(
+                "SELECT artifact_type, validation_status, file_path FROM input_artifacts"
+            ).fetchall()
+            self.assertEqual(7, len(rows))
+            persisted_text = "\n".join(
+                row[0] for row in connection.execute("SELECT payload FROM input_artifacts")
+            )
+            self.assertNotIn("fixture-secret", persisted_text)
+            self.assertIn("***REDACTED***", persisted_text)
+            valid_make = next(
+                Path(path)
+                for artifact_type, validation, path in rows
+                if artifact_type == "make_dry_run" and validation == "valid"
+            )
+            self.assertGreaterEqual(
+                connection.execute("SELECT COUNT(*) FROM workflow_state").fetchone()[0],
+                3,
+            )
+            connection.close()
+
+            valid_make.write_text("modified after import\n", encoding="utf-8")
+            stale_output = io.StringIO()
+            with contextlib.redirect_stdout(stale_output):
+                stale_code = cintel_main([*common, "resume"])
+            self.assertEqual(0, stale_code)
+            self.assertIn("CI-INPUT-003", stale_output.getvalue())
+            self.assertIn("Recovery status: reduced", stale_output.getvalue())
+
+    def test_phase_four_missing_generated_input_produces_exact_guidance(self) -> None:
+        sample = FIXTURE / "expected/sample_inputs/make-missing-input-dry-run.txt"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "analysis"
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured):
+                code = cintel_main(
+                    [
+                        "--repository", str(FIXTURE),
+                        "--output-directory", str(output),
+                        "--makefile", "Makefile",
+                        "--target", "missing-input-demo",
+                        "--build-config", "missing-input",
+                        "--input-file", str(sample),
+                        "--non-interactive",
+                        "resume",
+                    ]
+                )
+            self.assertEqual(0, code, captured.getvalue())
+            self.assertIn("Recovery status: reduced", captured.getvalue())
+            self.assertIn("CI-BUILD-005", captured.getvalue())
+            report = (output / "REQUIRED_INPUTS.md").read_text(encoding="utf-8")
+            self.assertIn("external_site_config.h", report)
+            self.assertIn("find . -name external_site_config.h -print", report)
+            self.assertIn("Do not run an unknown generation target", report)
 
     @unittest.skipUnless(
         shutil.which("make") and shutil.which("gcc"),

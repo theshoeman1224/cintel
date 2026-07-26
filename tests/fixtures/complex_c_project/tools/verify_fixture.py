@@ -29,6 +29,11 @@ REQUIRED_PATHS = (
     "src/shared/checksum.c", "src/plugins/Makefile", "src/legacy/unused_legacy_module.c",
     "generated/.gitkeep", "tools/compiler_wrapper.sh", "tools/generate_build_files.py",
     "expected/expected_findings.json", "unsupported/legacy_startup.S",
+    "expected/sample_inputs/repository-files.txt",
+    "expected/sample_inputs/application.d",
+    "expected/sample_inputs/application.i",
+    "expected/sample_inputs/macros.txt",
+    "expected/sample_inputs/verbose-build.log",
 )
 
 
@@ -59,7 +64,7 @@ def main() -> int:
         return 1
     print(
         f"Fixture verification passed: {len(comments)} expectation comments, "
-        f"{len(list(SAMPLES.glob('*.txt')))} dry-run samples."
+        f"5 dry-run samples, 5 guided-recovery samples."
     )
     return 0
 
@@ -77,7 +82,11 @@ def _collect_expectations(failures: list[str]) -> list[tuple[str, str]]:
     findings: list[tuple[str, str]] = []
     pattern = re.compile(r"CINTEL_EXPECT\[([A-Z_]+)\]")
     for path in sorted(ROOT.rglob("*")):
-        if path.suffix not in {".c", ".h", ".S", ".in"} or "build" in path.parts:
+        if (
+            path.suffix not in {".c", ".h", ".S", ".in"}
+            or "build" in path.parts
+            or "generated" in path.parts
+        ):
             continue
         text = path.read_text(encoding="utf-8")
         for category in pattern.findall(text):

@@ -12,11 +12,14 @@ from cintel.cli.presentation import (
     render_compilation_units,
     render_doctor,
     render_initialization,
+    render_recovery,
     render_scan,
 )
 from cintel.composition import create_application
 from cintel.configuration.loader import default_config, load_config
 from cintel.domain.errors import CintelError
+from cintel.domain.models import InputArtifactType, WorkflowStatus
+from cintel.utilities.secrets import redact_assignment_arguments
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force-build-discovery", action="store_true")
     parser.add_argument("--respect-make-timestamps", action="store_true")
     parser.add_argument("--input-file", type=Path)
+    parser.add_argument(
+        "--input-type",
+        choices=[item.value for item in InputArtifactType],
+        default=InputArtifactType.MAKE_DRY_RUN.value,
+        help="Type of evidence supplied with --input-file",
+    )
 
     subcommands = parser.add_subparsers(dest="command", required=True)
     initialize = subcommands.add_parser(
@@ -49,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser(
         "scan", help="Inventory C sources, headers, and Make build inputs"
     )
+    subcommands.add_parser("setup", help="Assess missing inputs and create recovery instructions")
+    subcommands.add_parser("instructions", help="Regenerate REQUIRED_INPUTS.md")
+    subcommands.add_parser("resume", help="Validate supplied evidence and resume analysis")
     build = subcommands.add_parser("build", help="Discover and inspect selected builds")
     build_commands = build.add_subparsers(dest="build_command", required=True)
     build_commands.add_parser("discover", help="Run and parse a GNU Make dry-run")
@@ -92,25 +104,40 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else 0
             )
 
+        if args.command in {"setup", "instructions", "resume"}:
+            config = _resolve_config(args.config, args.repository, args.output_directory)
+            configuration = _create_build_configuration(app, config, args)
+            if args.command == "setup" and args.input_file is None:
+                result = app.recovery.setup(config, configuration)
+            elif args.command == "instructions":
+                result = app.recovery.instructions(config, configuration)
+            else:
+                result = app.recovery.resume(
+                    config,
+                    configuration,
+                    args.input_file,
+                    InputArtifactType(args.input_type),
+                )
+            print(render_recovery(result, args.json))
+            return 2 if result.status is WorkflowStatus.INTERRUPTED else 0
+
         if args.command == "build":
             config = _resolve_config(args.config, args.repository, args.output_directory)
             if args.build_command == "discover":
                 if args.input_file is not None:
-                    from cintel.domain.errors import FeatureNotImplementedError
-
-                    raise FeatureNotImplementedError(
-                        "Saved Make-output importing belongs to Phase 4 guided recovery."
+                    configuration = _create_build_configuration(app, config, args)
+                    recovery = app.recovery.resume(
+                        config,
+                        configuration,
+                        args.input_file,
+                        InputArtifactType.MAKE_DRY_RUN,
                     )
-                configuration = app.build_discovery.create_configuration(
-                    config,
-                    makefile=args.makefile,
-                    working_directory=args.make_working_directory,
-                    target=args.target,
-                    make_variables=parse_assignments(args.make_var, "--make-var"),
-                    environment_overrides=parse_assignments(args.env, "--env"),
-                    name=args.build_config,
-                    respect_make_timestamps=args.respect_make_timestamps,
-                )
+                    if recovery.build_result is None:
+                        print(render_recovery(recovery, args.json))
+                        return 2
+                    print(render_build_discovery(recovery.build_result, args.json))
+                    return 0
+                configuration = _create_build_configuration(app, config, args)
                 preview = app.build_discovery.preview(configuration)
                 if args.verbose or (
                     not args.non_interactive and sys.stdin.isatty()
@@ -175,21 +202,27 @@ def _resolve_config(
     return default_config(root, output_directory)
 
 
+def _create_build_configuration(app, config, args):
+    return app.build_discovery.create_configuration(
+        config,
+        makefile=args.makefile,
+        working_directory=args.make_working_directory,
+        target=args.target,
+        make_variables=parse_assignments(args.make_var, "--make-var"),
+        environment_overrides=parse_assignments(args.env, "--env"),
+        name=args.build_config,
+        respect_make_timestamps=args.respect_make_timestamps,
+    )
+
+
 def _redacted_command_preview(
     arguments: tuple[str, ...],
     environment_overrides: tuple[tuple[str, str], ...] = (),
 ) -> str:
-    redacted = [
+    arguments_with_environment = [
         f"{name}={value}" for name, value in environment_overrides
     ] + list(arguments)
-    secret_markers = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "KEY", "CREDENTIAL", "AUTH")
-    for index, argument in enumerate(redacted):
-        if "=" not in argument:
-            continue
-        name, _ = argument.split("=", 1)
-        if any(marker in name.upper() for marker in secret_markers):
-            redacted[index] = f"{name}=***REDACTED***"
-    return shlex.join(redacted)
+    return shlex.join(redact_assignment_arguments(arguments_with_environment))
 
 
 if __name__ == "__main__":

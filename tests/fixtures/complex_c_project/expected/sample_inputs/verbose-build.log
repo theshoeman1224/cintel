@@ -1,0 +1,2 @@
+gcc -Iinclude -Igenerated -isystem third_party/include -include generated/build_config.h -DPLATFORM_LINUX -DFEATURE_TELEMETRY=1 -std=c11 -O2 -g -c src/core/application.c -o build/linux/src/core/application.o
+gcc -Iinclude -DPLATFORM_LINUX -std=c11 -O2 -g -c src/shared/checksum.c -o build/linux/src/shared/checksum.o

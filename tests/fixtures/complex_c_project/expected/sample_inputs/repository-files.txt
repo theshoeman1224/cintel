@@ -1,0 +1,7 @@
+Makefile
+include/cintel_fixture/application.h
+include/cintel_fixture/router.h
+src/app/main.c
+src/core/application.c
+src/routing/router.c
+src/shared/checksum.c

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from cintel.domain.models import (
     BuildDiscoveryResult,
     CapabilityStatus,
     CommandRequest,
+    CommandResult,
     CommandRisk,
     CompilationUnit,
     CompilerInvocation,
@@ -57,6 +59,14 @@ class MakeBuildDiscovery:
     def discover(self, configuration: BuildConfiguration) -> BuildDiscoveryResult:
         request = self.command_request(configuration)
         result = self._command_runner.run(request)
+        return self._build_result(configuration, request, result)
+
+    def _build_result(
+        self,
+        configuration: BuildConfiguration,
+        request: CommandRequest,
+        result: CommandResult,
+    ) -> BuildDiscoveryResult:
         (
             commands,
             invocations,
@@ -235,6 +245,46 @@ class MakeBuildDiscovery:
                         and not Path(item.source.absolute).is_file()
                     }
                 )
+            ),
+        )
+
+    def discover_from_output(
+        self,
+        configuration: BuildConfiguration,
+        raw_output: str,
+        *,
+        raw_error: str = "",
+        exit_code: int = 0,
+        artifact_hash: str | None = None,
+    ) -> BuildDiscoveryResult:
+        """Parse validated saved output through the same path as live Make output."""
+        request = self.command_request(configuration)
+        result = self._build_result(
+            configuration,
+            request,
+            CommandResult(
+                standard_output=raw_output,
+                standard_error=raw_error,
+                exit_code=exit_code,
+                duration_seconds=0.0,
+                executed_command=request.arguments,
+                effective_working_directory=request.working_directory,
+            ),
+        )
+        input_fingerprint = stable_fingerprint(
+            {
+                "configuration": result.input_fingerprint,
+                "saved_artifact": artifact_hash or stable_fingerprint(raw_output),
+            }
+        )
+        return replace(
+            result,
+            input_fingerprint=input_fingerprint,
+            build_fingerprint=stable_fingerprint(
+                {
+                    "parsed_build": result.build_fingerprint,
+                    "saved_artifact": artifact_hash or stable_fingerprint(raw_output),
+                }
             ),
         )
 
