@@ -1,0 +1,75 @@
+schema_version: 1
+
+project:
+  name: "Legacy C Code Intelligence"
+  slug: "cintel"
+
+  tagline: "Offline build-aware analysis for legacy C repositories"
+
+  summary: >
+    Legacy C Code Intelligence is a Python CLI that turns C repositories and
+    their GNU Make build evidence into deterministic, structured inventories.
+    Its offline-first foundation preserves build configurations, diagnostics,
+    and resumable analysis state without requiring an AI service.
+
+  description: >
+    The project addresses a recurring problem in legacy C systems: source code
+    cannot be interpreted reliably without the Make targets, compiler flags,
+    generated inputs, and conditional definitions that shape each build. It
+    inventories source and build inputs, evaluates or imports GNU Make dry-run
+    evidence, normalizes GCC-style compiler commands, and records distinct
+    compilation units for each build configuration.
+
+    A ports-and-adapters architecture keeps domain models and application
+    workflows independent of subprocesses, SQLite, compilers, and presentation.
+    Incremental fingerprints and schema migrations support durable, resumable
+    work, while structured capabilities and diagnostics make incomplete
+    toolchains explicit. A conservative C parser can extract per-file symbols
+    and includes with confidence metadata; cross-file resolution and end-user
+    analysis queries remain active roadmap work.
+
+  status: "active"
+
+  role: "Creator and Developer"
+
+  dates:
+    started: "2026-07-18"
+    completed:
+
+  technologies:
+    - "Python 3.11"
+    - "C"
+    - "SQLite"
+    - "GNU Make"
+    - "GCC/Clang"
+    - "TOML"
+
+  categories:
+    - "Developer Tools"
+    - "Static Analysis"
+    - "Systems"
+    - "Automation"
+
+  highlights:
+    - "Delegates Makefile evaluation to GNU Make and conservatively interprets dry-run evidence instead of reimplementing Make semantics"
+    - "Normalizes recursive builds, shell command boundaries, compiler wrappers, flags, paths, and configuration-specific compilation units"
+    - "Persists incremental repository, build, artifact, workflow, and parser state in a versioned SQLite schema"
+    - "Supports validated imported build evidence and resumable workflows when local toolchains or generated inputs are unavailable"
+    - "Extracts C symbols and includes with offset-preserving lexical masking, confidence levels, and structured diagnostics"
+    - "Keeps deterministic analysis local through protocol-based adapters and a Python implementation with no runtime third-party dependencies"
+
+  links:
+    repository: "https://github.com/theshoeman1224/cintel"
+
+    primary:
+      - name: "Capabilities and MVP Roadmap"
+        type: "documentation"
+        url: "https://github.com/theshoeman1224/cintel/blob/main/docs/CURRENT_CAPABILITIES_AND_MVP_ROADMAP.md"
+
+    dashboards:
+      - name: "SonarQube Cloud"
+        type: "quality"
+        url: "https://sonarcloud.io/project/overview?id=theshoeman1224_cintel"
+
+  demo:
+    type: "none"
