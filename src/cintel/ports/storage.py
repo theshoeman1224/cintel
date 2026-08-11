@@ -10,6 +10,7 @@ from cintel.domain.models import (
     InputArtifact,
     Repository,
     RepositoryFile,
+    SourceAnalysisResult,
     WorkflowState,
 )
 
@@ -69,3 +70,13 @@ class AnalysisStorage(Protocol):
     def save_workflow_state(self, state: WorkflowState) -> None: ...
 
     def list_workflow_states(self, repository_id: str) -> tuple[WorkflowState, ...]: ...
+
+    def replace_source_analysis(self, result: SourceAnalysisResult) -> None: ...
+
+    def list_source_analyses_for_file(
+        self, repository_file_id: str
+    ) -> tuple[SourceAnalysisResult, ...]: ...
+
+    def get_source_analysis_for_compilation_unit(
+        self, compilation_unit_id: str
+    ) -> SourceAnalysisResult | None: ...

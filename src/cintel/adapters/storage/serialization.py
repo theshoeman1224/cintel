@@ -14,18 +14,34 @@ from cintel.domain.models import (
     AnalysisCapability,
     BuildConfiguration,
     BuildDiscoveryResult,
+    CallRelationship,
     CapabilityStatus,
     CompilationUnit,
     CompilerArgumentSet,
     CompilerInvocation,
+    EvidenceKind,
+    FunctionSymbol,
+    GlobalUsageRelationship,
+    IncludeRelationship,
     IncludePath,
     InputArtifact,
     InputArtifactType,
     ArtifactValidationStatus,
     MacroDefinition,
+    MacroSymbol,
     PathReference,
     RawBuildCommand,
+    RelationshipEvidence,
+    RelationshipResolution,
+    SourceAnalysisResult,
+    SourceAnalysisStatus,
+    SourceLocation,
+    SourceRelationship,
+    SourceSymbol,
     StalenessStatus,
+    TypeSymbol,
+    VariableSymbol,
+    Linkage,
 )
 from cintel.utilities.secrets import is_sensitive_name
 
@@ -257,4 +273,130 @@ def input_artifact_from_dict(data: dict) -> InputArtifact:
         validation_messages=tuple(data.get("validation_messages", ())),
         build_configuration_id=data.get("build_configuration_id"),
         staleness_status=StalenessStatus(data["staleness_status"]),
+    )
+
+
+def source_analysis_from_parts(
+    data: dict,
+    symbols: tuple[SourceSymbol, ...],
+    relationships: tuple[SourceRelationship, ...],
+    diagnostics: tuple[Diagnostic, ...],
+) -> SourceAnalysisResult:
+    return SourceAnalysisResult(
+        id=data["id"],
+        repository_id=data["repository_id"],
+        repository_file_id=data["repository_file_id"],
+        compilation_unit_id=data.get("compilation_unit_id"),
+        source_hash=data["source_hash"],
+        analysis_fingerprint=data["analysis_fingerprint"],
+        parser_name=data["parser_name"],
+        parser_version=data["parser_version"],
+        status=SourceAnalysisStatus(data["status"]),
+        symbols=symbols,
+        relationships=relationships,
+        diagnostics=diagnostics,
+        analyzed_at=datetime.fromisoformat(data["analyzed_at"]),
+    )
+
+
+def source_symbol_from_dict(kind: str, data: dict) -> SourceSymbol:
+    common = {
+        "id": data["id"],
+        "name": data["name"],
+        "location": _source_location_from_dict(data["location"]),
+        "confidence": float(data.get("confidence", 1.0)),
+        "evidence": tuple(
+            _relationship_evidence_from_dict(item)
+            for item in data.get("evidence", ())
+        ),
+    }
+    if kind == "function":
+        return FunctionSymbol(
+            **common,
+            is_definition=bool(data["is_definition"]),
+            linkage=Linkage(data["linkage"]),
+            return_type=data.get("return_type"),
+            parameters=tuple(data.get("parameters", ())),
+        )
+    if kind == "variable":
+        return VariableSymbol(
+            **common,
+            type_spelling=data.get("type_spelling"),
+            linkage=Linkage(data["linkage"]),
+            is_definition=bool(data["is_definition"]),
+        )
+    if kind == "type":
+        return TypeSymbol(
+            **common,
+            type_kind=data["type_kind"],
+            is_definition=bool(data["is_definition"]),
+            underlying_type=data.get("underlying_type"),
+        )
+    if kind == "macro":
+        return MacroSymbol(
+            **common,
+            replacement=data.get("replacement"),
+            is_function_like=bool(data.get("is_function_like", False)),
+            parameters=tuple(data.get("parameters", ())),
+        )
+    raise ValueError(f"Unsupported source symbol kind: {kind}")
+
+
+def source_relationship_from_dict(kind: str, data: dict) -> SourceRelationship:
+    evidence = tuple(
+        _relationship_evidence_from_dict(item) for item in data.get("evidence", ())
+    )
+    if kind == "include":
+        return IncludeRelationship(
+            id=data["id"],
+            source_file_id=data["source_file_id"],
+            included_spelling=data["included_spelling"],
+            resolved_file_id=data.get("resolved_file_id"),
+            evidence=evidence,
+            confidence=float(data["confidence"]),
+        )
+    if kind == "call":
+        return CallRelationship(
+            id=data["id"],
+            caller_id=data["caller_id"],
+            callee_id=data.get("callee_id"),
+            callee_spelling=data["callee_spelling"],
+            resolution=RelationshipResolution(data["resolution"]),
+            evidence=evidence,
+            confidence=float(data["confidence"]),
+        )
+    if kind == "global_usage":
+        return GlobalUsageRelationship(
+            id=data["id"],
+            function_id=data["function_id"],
+            variable_id=data.get("variable_id"),
+            variable_spelling=data["variable_spelling"],
+            evidence=evidence,
+            confidence=float(data["confidence"]),
+        )
+    raise ValueError(f"Unsupported source relationship kind: {kind}")
+
+
+def _source_location_from_dict(data: dict) -> SourceLocation:
+    return SourceLocation(
+        path=data["path"],
+        line=int(data["line"]),
+        column=int(data.get("column", 1)),
+        end_line=int(data["end_line"]) if data.get("end_line") is not None else None,
+        end_column=(
+            int(data["end_column"]) if data.get("end_column") is not None else None
+        ),
+    )
+
+
+def _relationship_evidence_from_dict(data: dict) -> RelationshipEvidence:
+    return RelationshipEvidence(
+        kind=EvidenceKind(data["kind"]),
+        description=data["description"],
+        location=(
+            _source_location_from_dict(data["location"])
+            if data.get("location")
+            else None
+        ),
+        provenance=data.get("provenance"),
     )

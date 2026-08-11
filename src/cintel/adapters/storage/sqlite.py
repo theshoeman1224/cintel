@@ -12,12 +12,21 @@ from cintel.domain.models import (
     AnalysisCapability,
     BuildConfiguration,
     BuildDiscoveryResult,
+    CallRelationship,
     CompilationUnit,
     FileKind,
+    FunctionSymbol,
     GeneratedReportMetadata,
+    GlobalUsageRelationship,
+    IncludeRelationship,
     InputArtifact,
+    MacroSymbol,
     Repository,
     RepositoryFile,
+    SourceAnalysisResult,
+    SourceSymbol,
+    TypeSymbol,
+    VariableSymbol,
     WorkflowState,
     WorkflowStatus,
 )
@@ -30,6 +39,9 @@ from cintel.adapters.storage.serialization import (
     json_default,
     redact_text,
     sanitized_json,
+    source_analysis_from_parts,
+    source_relationship_from_dict,
+    source_symbol_from_dict,
 )
 from cintel.adapters.storage.migrations import SCHEMA_VERSION, migrate
 
@@ -171,45 +183,7 @@ class SQLiteAnalysisStorage:
         context: str = "general",
     ) -> None:
         connection = self._connect()
-        connection.execute(
-            "DELETE FROM diagnostics WHERE repository_id = ? AND context_key = ?",
-            (repository_id, context),
-        )
-        connection.executemany(
-            """
-            INSERT INTO diagnostics
-              (repository_id, code, severity, message, payload, context_key)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                (
-                    repository_id,
-                    item.code,
-                    item.severity.value,
-                    item.message,
-                    json.dumps(
-                        {
-                            "technical_details": item.technical_details,
-                            "missing_capability": item.missing_capability,
-                            "recoverability": item.recoverability.value,
-                            "suggested_actions": item.suggested_actions,
-                            "related_paths": item.related_paths,
-                            "related_commands": tuple(
-                                {
-                                    "arguments": command.arguments,
-                                    "working_directory": command.working_directory,
-                                }
-                                for command in item.related_commands
-                            ),
-                            "metadata": item.metadata,
-                        },
-                        sort_keys=True,
-                    ),
-                    context,
-                )
-                for item in diagnostics
-            ),
-        )
+        _replace_diagnostics(connection, repository_id, diagnostics, context)
         connection.commit()
 
     def save_capabilities(
@@ -507,8 +481,269 @@ class SQLiteAnalysisStorage:
             for row in rows
         )
 
+    def replace_source_analysis(self, result: SourceAnalysisResult) -> None:
+        connection = self._connect()
+        payload = json.dumps(
+            {
+                "id": result.id,
+                "repository_id": result.repository_id,
+                "repository_file_id": result.repository_file_id,
+                "compilation_unit_id": result.compilation_unit_id,
+                "source_hash": result.source_hash,
+                "analysis_fingerprint": result.analysis_fingerprint,
+                "parser_name": result.parser_name,
+                "parser_version": result.parser_version,
+                "status": result.status.value,
+                "analyzed_at": result.analyzed_at.isoformat(),
+            },
+            sort_keys=True,
+        )
+        connection.execute(
+            """
+            INSERT INTO source_analysis_runs
+              (id, repository_id, repository_file_id, compilation_unit_id,
+               source_hash, analysis_fingerprint, parser_name, parser_version,
+               status, analyzed_at, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              source_hash=excluded.source_hash,
+              analysis_fingerprint=excluded.analysis_fingerprint,
+              parser_name=excluded.parser_name,
+              parser_version=excluded.parser_version,
+              status=excluded.status,
+              analyzed_at=excluded.analyzed_at,
+              payload=excluded.payload
+            """,
+            (
+                result.id,
+                result.repository_id,
+                result.repository_file_id,
+                result.compilation_unit_id,
+                result.source_hash,
+                result.analysis_fingerprint,
+                result.parser_name,
+                result.parser_version,
+                result.status.value,
+                result.analyzed_at.isoformat(),
+                payload,
+            ),
+        )
+        connection.execute(
+            "DELETE FROM source_symbols WHERE analysis_id = ?", (result.id,)
+        )
+        connection.execute(
+            "DELETE FROM source_relationships WHERE analysis_id = ?", (result.id,)
+        )
+        connection.executemany(
+            """
+            INSERT INTO source_symbols (analysis_id, id, kind, name, payload)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    result.id,
+                    symbol.id,
+                    _source_symbol_kind(symbol),
+                    symbol.name,
+                    json.dumps(asdict(symbol), default=json_default, sort_keys=True),
+                )
+                for symbol in result.symbols
+            ),
+        )
+        connection.executemany(
+            """
+            INSERT INTO source_relationships (analysis_id, id, kind, payload)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                (
+                    result.id,
+                    relationship.id,
+                    _source_relationship_kind(relationship),
+                    json.dumps(
+                        asdict(relationship), default=json_default, sort_keys=True
+                    ),
+                )
+                for relationship in result.relationships
+            ),
+        )
+        _replace_diagnostics(
+            connection,
+            result.repository_id,
+            result.diagnostics,
+            _source_analysis_context(
+                result.repository_file_id, result.compilation_unit_id
+            ),
+        )
+        connection.commit()
+
+    def list_source_analyses_for_file(
+        self, repository_file_id: str
+    ) -> tuple[SourceAnalysisResult, ...]:
+        rows = self._connect().execute(
+            """
+            SELECT id, payload FROM source_analysis_runs
+            WHERE repository_file_id = ?
+            ORDER BY compilation_unit_id IS NOT NULL, compilation_unit_id, id
+            """,
+            (repository_file_id,),
+        ).fetchall()
+        return tuple(self._load_source_analysis(row[0], row[1]) for row in rows)
+
+    def get_source_analysis_for_compilation_unit(
+        self, compilation_unit_id: str
+    ) -> SourceAnalysisResult | None:
+        row = self._connect().execute(
+            """
+            SELECT id, payload FROM source_analysis_runs
+            WHERE compilation_unit_id = ?
+            """,
+            (compilation_unit_id,),
+        ).fetchone()
+        return self._load_source_analysis(row[0], row[1]) if row else None
+
+    def _load_source_analysis(
+        self, analysis_id: str, payload: str
+    ) -> SourceAnalysisResult:
+        connection = self._connect()
+        symbol_rows = connection.execute(
+            """
+            SELECT kind, payload FROM source_symbols
+            WHERE analysis_id = ? ORDER BY kind, name, id
+            """,
+            (analysis_id,),
+        ).fetchall()
+        relationship_rows = connection.execute(
+            """
+            SELECT kind, payload FROM source_relationships
+            WHERE analysis_id = ? ORDER BY kind, id
+            """,
+            (analysis_id,),
+        ).fetchall()
+        data = json.loads(payload)
+        diagnostics = _load_diagnostics(
+            connection,
+            data["repository_id"],
+            _source_analysis_context(
+                data["repository_file_id"], data.get("compilation_unit_id")
+            ),
+        )
+        return source_analysis_from_parts(
+            data,
+            tuple(
+                source_symbol_from_dict(kind, json.loads(item_payload))
+                for kind, item_payload in symbol_rows
+            ),
+            tuple(
+                source_relationship_from_dict(kind, json.loads(item_payload))
+                for kind, item_payload in relationship_rows
+            ),
+            diagnostics,
+        )
+
     def _connect(self) -> sqlite3.Connection:
         if self._connection is None:
             self._connection = sqlite3.connect(self._database_path)
             self._connection.execute("PRAGMA foreign_keys = ON")
         return self._connection
+
+
+def _source_symbol_kind(symbol: SourceSymbol) -> str:
+    if isinstance(symbol, FunctionSymbol):
+        return "function"
+    if isinstance(symbol, VariableSymbol):
+        return "variable"
+    if isinstance(symbol, TypeSymbol):
+        return "type"
+    if isinstance(symbol, MacroSymbol):
+        return "macro"
+    raise TypeError(f"Unsupported source symbol: {type(symbol).__name__}")
+
+
+def _source_relationship_kind(
+    relationship: IncludeRelationship | CallRelationship | GlobalUsageRelationship,
+) -> str:
+    if isinstance(relationship, IncludeRelationship):
+        return "include"
+    if isinstance(relationship, CallRelationship):
+        return "call"
+    if isinstance(relationship, GlobalUsageRelationship):
+        return "global_usage"
+    raise TypeError(
+        f"Unsupported source relationship: {type(relationship).__name__}"
+    )
+
+
+def _source_analysis_context(
+    repository_file_id: str, compilation_unit_id: str | None
+) -> str:
+    return (
+        f"parse:unit:{compilation_unit_id}"
+        if compilation_unit_id is not None
+        else f"parse:file:{repository_file_id}"
+    )
+
+
+def _replace_diagnostics(
+    connection: sqlite3.Connection,
+    repository_id: str,
+    diagnostics: tuple[Diagnostic, ...],
+    context: str,
+) -> None:
+    connection.execute(
+        "DELETE FROM diagnostics WHERE repository_id = ? AND context_key = ?",
+        (repository_id, context),
+    )
+    connection.executemany(
+        """
+        INSERT INTO diagnostics
+          (repository_id, code, severity, message, payload, context_key)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            (
+                repository_id,
+                item.code,
+                item.severity.value,
+                item.message,
+                json.dumps(
+                    {
+                        "technical_details": item.technical_details,
+                        "missing_capability": item.missing_capability,
+                        "recoverability": item.recoverability.value,
+                        "suggested_actions": item.suggested_actions,
+                        "related_paths": item.related_paths,
+                        "related_commands": tuple(
+                            {
+                                "arguments": command.arguments,
+                                "working_directory": command.working_directory,
+                            }
+                            for command in item.related_commands
+                        ),
+                        "metadata": item.metadata,
+                    },
+                    sort_keys=True,
+                ),
+                context,
+            )
+            for item in diagnostics
+        ),
+    )
+
+
+def _load_diagnostics(
+    connection: sqlite3.Connection, repository_id: str, context: str
+) -> tuple[Diagnostic, ...]:
+    rows = connection.execute(
+        """
+        SELECT code, severity, message, payload FROM diagnostics
+        WHERE repository_id = ? AND context_key = ? ORDER BY id
+        """,
+        (repository_id, context),
+    ).fetchall()
+    results = []
+    for code, severity, message, payload in rows:
+        data = json.loads(payload)
+        data.update({"code": code, "severity": severity, "message": message})
+        results.append(diagnostic_from_dict(data))
+    return tuple(results)

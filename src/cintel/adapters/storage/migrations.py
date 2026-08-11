@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def migrate(connection: sqlite3.Connection, current_version: int) -> None:
-    migrations = (_to_v1, _to_v2, _to_v3, _to_v4)
+    migrations = (_to_v1, _to_v2, _to_v3, _to_v4, _to_v5)
     for target_version, migration in enumerate(migrations, 1):
         if current_version < target_version:
             migration(connection)
@@ -161,5 +161,55 @@ def _to_v4(connection: sqlite3.Connection) -> None:
             PRIMARY KEY (repository_id, stage)
         );
         UPDATE schema_metadata SET value = '4' WHERE key = 'schema_version';
+        """
+    )
+
+
+def _to_v5(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS source_analysis_runs (
+            id TEXT PRIMARY KEY,
+            repository_id TEXT NOT NULL REFERENCES repositories(id)
+                ON DELETE CASCADE,
+            repository_file_id TEXT NOT NULL REFERENCES repository_files(id)
+                ON DELETE CASCADE,
+            compilation_unit_id TEXT REFERENCES compilation_units(id)
+                ON DELETE CASCADE,
+            source_hash TEXT NOT NULL,
+            analysis_fingerprint TEXT NOT NULL,
+            parser_name TEXT NOT NULL,
+            parser_version TEXT NOT NULL,
+            status TEXT NOT NULL,
+            analyzed_at TEXT NOT NULL,
+            payload TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS source_analysis_file_idx
+            ON source_analysis_runs (repository_file_id, compilation_unit_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS source_analysis_unit_idx
+            ON source_analysis_runs (compilation_unit_id)
+            WHERE compilation_unit_id IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS source_symbols (
+            analysis_id TEXT NOT NULL REFERENCES source_analysis_runs(id)
+                ON DELETE CASCADE,
+            id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (analysis_id, id)
+        );
+        CREATE INDEX IF NOT EXISTS source_symbols_name_idx
+            ON source_symbols (name, kind);
+        CREATE TABLE IF NOT EXISTS source_relationships (
+            analysis_id TEXT NOT NULL REFERENCES source_analysis_runs(id)
+                ON DELETE CASCADE,
+            id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (analysis_id, id)
+        );
+        CREATE INDEX IF NOT EXISTS source_relationships_kind_idx
+            ON source_relationships (kind);
+        UPDATE schema_metadata SET value = '5' WHERE key = 'schema_version';
         """
     )

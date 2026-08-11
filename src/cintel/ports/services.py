@@ -4,7 +4,6 @@ from typing import Any, Protocol
 
 from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
-    AnalysisResult,
     BuildConfiguration,
     BuildDiscoveryResult,
     CommandRequest,
@@ -16,6 +15,7 @@ from cintel.domain.models import (
     InputArtifact,
     RepositoryFile,
     RepositoryScan,
+    SourceAnalysisResult,
 )
 
 
@@ -61,7 +61,7 @@ class CompilerProvider(Protocol):
 class SourceParser(Protocol):
     def parse(
         self, repository_file: RepositoryFile, compilation_unit: CompilationUnit | None
-    ) -> AnalysisResult: ...
+    ) -> SourceAnalysisResult: ...
 
 
 class RepositoryDiscoveryProvider(Protocol):

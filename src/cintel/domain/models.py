@@ -84,6 +84,12 @@ class WorkflowStatus(StrEnum):
     REDUCED = "reduced"
 
 
+class SourceAnalysisStatus(StrEnum):
+    COMPLETED = "completed"
+    DEGRADED = "degraded"
+    FAILED = "failed"
+
+
 class CommandRisk(StrEnum):
     READ_ONLY = "read_only"
     MAKEFILE_EVALUATION = "makefile_evaluation"
@@ -261,6 +267,7 @@ class FunctionSymbol:
     return_type: str | None = None
     parameters: tuple[str, ...] = ()
     confidence: float = 1.0
+    evidence: tuple[RelationshipEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +279,7 @@ class VariableSymbol:
     linkage: Linkage
     is_definition: bool
     confidence: float = 1.0
+    evidence: tuple[RelationshipEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +290,8 @@ class TypeSymbol:
     location: SourceLocation
     is_definition: bool
     confidence: float = 1.0
+    underlying_type: str | None = None
+    evidence: tuple[RelationshipEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +301,9 @@ class MacroSymbol:
     location: SourceLocation
     replacement: str | None
     confidence: float = 1.0
+    is_function_like: bool = False
+    parameters: tuple[str, ...] = ()
+    evidence: tuple[RelationshipEvidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,6 +343,29 @@ class GlobalUsageRelationship:
     variable_spelling: str
     evidence: tuple[RelationshipEvidence, ...]
     confidence: float
+
+
+SourceSymbol = FunctionSymbol | VariableSymbol | TypeSymbol | MacroSymbol
+SourceRelationship = (
+    IncludeRelationship | CallRelationship | GlobalUsageRelationship
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceAnalysisResult:
+    id: str
+    repository_id: str
+    repository_file_id: str
+    compilation_unit_id: str | None
+    source_hash: str
+    analysis_fingerprint: str
+    parser_name: str
+    parser_version: str
+    status: SourceAnalysisStatus
+    symbols: tuple[SourceSymbol, ...]
+    relationships: tuple[SourceRelationship, ...]
+    diagnostics: tuple[Diagnostic, ...]
+    analyzed_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

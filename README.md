@@ -3,12 +3,13 @@
 Legacy C Code Intelligence (`cintel`) is an offline-first command-line
 application for turning legacy C repositories into structured, build-aware
 knowledge for developers and coding agents. The current codebase implements
-the Phase 1 foundation through Phase 4 guided recovery: initialization,
+the Phase 1 foundation through Phase 4 guided recovery, plus the Phase 5A
+source-parser and persistence foundation: initialization,
 environment diagnostics, recursive C/build-input discovery, incremental
 SHA-256 hashing, GNU Make dry-run build discovery, compiler-command
 normalization, validated input artifacts, resumable workflow state, SQLite
-state, deterministic Markdown/JSON inventory reports, configuration, and
-dependency composition.
+state, conservative per-file C symbol/include extraction, deterministic
+Markdown/JSON inventory reports, configuration, and dependency composition.
 
 It does not send source code externally. AI is disabled by default, and the
 deterministic analysis architecture does not depend on an AI model.
@@ -27,7 +28,7 @@ cintel --help
 Tests use the standard library:
 
 ```bash
-python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
 ## Quick start
@@ -164,9 +165,9 @@ The project uses ports and adapters:
   guidance, and AI contracts.
 - `adapters` contains filesystem repository discovery and output writing,
   Markdown/JSON repository rendering, Make discovery, GCC-style argument
-  normalization, the subprocess command runner, SQLite persistence, and the
-  disabled AI provider. Later adapters will add compiler enrichment and C
-  parsing behavior.
+  normalization, conservative C parsing, the subprocess command runner, SQLite
+  persistence, and the disabled AI provider. Later adapters will add compiler
+  enrichment.
 - `configuration` reads TOML and owns the small initial configuration schema.
 - `cli` parses arguments, invokes application services, and renders results.
 - `composition.py` is the composition root; there are no global service
@@ -201,15 +202,18 @@ SQLite stores a schema version in `schema_metadata`. Schema v2 adds repository
 file inventory and generated-report metadata. Schema v3 adds build
 configurations, discovery runs, raw build commands, compiler invocations, and
 compilation units. Schema v4 adds validated input artifacts and resumable
-workflow state. Migrations are applied
+workflow state. Schema v5 adds per-file/configuration source-analysis state,
+symbols, and relationships while parser diagnostics reuse context-scoped
+diagnostic storage. Migrations are applied
 incrementally by the storage adapter; a database newer than the application is
 rejected explicitly.
 
 ## Known MVP limitations
 
 The Phase 1 foundation, Phase 2 repository inventory, Phase 3 Make build
-discovery, and Phase 4 guided recovery are implemented. Conservative C parsing,
-relationships, broader reports, context packages, and GCC enrichment belong to
+discovery, Phase 4 guided recovery, and Phase 5A conservative parser/persistence
+foundation are implemented. Cross-file relationship resolution, an analysis
+workflow, broader reports, context packages, and GCC enrichment belong to
 subsequent vertical slices.
 
 Even after those slices, conservative analysis will have known limitations:
