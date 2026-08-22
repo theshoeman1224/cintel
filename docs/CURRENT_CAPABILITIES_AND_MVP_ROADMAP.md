@@ -33,10 +33,22 @@ PYTHONPATH=src python3 -m cintel --help
 PYTHONPATH=src python3 -m cintel build --help
 ```
 
-Result:
+Result (re-verified 2026-08-22 after completing the Phase 0-5 cleanup effort
+in `docs/REFACTOR_PLAN.md`):
 
-- 62 tests passed.
-- The suite contains 50 unit tests and 12 integration tests.
+- 102 tests passed: 90 unit and 12 integration, including the live complex
+  fixture build and validation.
+- New safety-net suites cover the guided-recovery service against fake ports,
+  CLI presentation renderers, serialization round trips for all symbol and
+  relationship kinds, schema migrations from v2/v3/v4 snapshots, the
+  command-runner timeout path, and repository-id stability across path
+  spellings.
+- The cleanup unified repository-id derivation and exclusion matching (doctor
+  now skips excluded files exactly as scan does), consolidated the storage
+  lifecycle and diagnostic serialization, decomposed the parser, Make
+  adapter, and CLI dispatch, and removed dead models. Parser and Make-discovery
+  outputs were verified byte-identical against pre-refactor dumps over every
+  fixture sample.
 - The CLI exposes `init`, `doctor`, `scan`, `setup`, `instructions`, `resume`,
   and the `build discover`, `build units`, and `build show` subcommands.
 - The complex C fixture verifies scanning, saved and live-style Make discovery,
@@ -48,7 +60,7 @@ Result:
 - Only `src/cintel/adapters/commands/subprocess_runner.py` imports
   `subprocess`.
 
-The tests require either an editable installation (`python -m pip install -e .`)
+The tests require either an editable installation (`python scripts/install.py`)
 or `PYTHONPATH=src` when run directly from a fresh checkout.
 
 ## Architecture status
@@ -63,7 +75,7 @@ or `PYTHONPATH=src` when run directly from a fresh checkout.
 | Compiler adapters | Partially implemented | GCC-style argument parsing and compiler version lookup exist. General GCC capability probing and enrichment do not. |
 | Repository adapter | Implemented | Filesystem discovery, exclusions, hashing, metadata, and incremental hash reuse exist. |
 | Source parser adapter | Phase 5A implemented | The conservative parser implements offset-preserving masking and basic extraction behind `SourceParser`; application orchestration and cross-file resolution remain. |
-| SQLite adapter | Implemented through Phase 5A | Schema version 5 adds source-analysis runs, symbols, relationships, and context-scoped parser diagnostics to the Phase 1–4 state. |
+| SQLite adapter | Implemented through Phase 5A | Schema version 5 adds source-analysis runs, symbols, relationships, and context-scoped parser diagnostics to the Phase 1–4 state. `list_build_configurations` is a reserved port surface until Phase 6 query workflows need it. |
 | Report adapters | Partially implemented | Markdown and JSON repository inventory plus Markdown recovery instructions exist. Build, symbol, graph, diagnostics, capability, and context report families are incomplete. |
 | AI adapter | Implemented as disabled | The deterministic core does not depend on AI. Requests to generate AI content fail explicitly. |
 | Composition root | Implemented | Dependencies are constructed in `composition.py`; there are no global service instances. |
@@ -321,10 +333,13 @@ will remain explicit limitations.
 
 ### Audit findings to correct during subsequent work
 
-- The repository scanner currently emits a stale capability reason saying Make
-  discovery is not implemented until Phase 3. Phase 3 is implemented.
-- `repository.md` is scan-scoped and always says build awareness is unavailable
-  until Make discovery; it does not consult persisted build discoveries.
+Status update 2026-08-22: the stale scan capability reason ("not implemented
+until Phase 3") and the scan-only build-awareness wording in `repository.md`
+were corrected by the cleanup effort; see `docs/REFACTOR_PLAN.md` Phases 1
+and 5. The remaining items below still stand.
+
+- `repository.md` remains scan-scoped by design; it now says so explicitly,
+  and integrating persisted build discoveries belongs to Phase 6 report work.
 - Parts of the README still describe the implemented guided-recovery commands
   and complex fixture as planned future work.
 - The direct-from-checkout test command in the README assumes an editable
