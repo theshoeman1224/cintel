@@ -83,6 +83,11 @@ not exposed as successful no-ops.
 `cintel resume` validates an optional `--input-file`, records its SHA-256 hash and
 provenance, checks it for later staleness, and continues from completed stages.
 
+Imported Make dry-run text may contain path placeholders for paths that differ
+on the machine where it will be analyzed. `--path-placeholder OLD=NEW`
+(repeatable) replaces each OLD token with NEW before parsing;
+`<FIXTURE_ROOT>` maps to the configured repository root by default.
+
 Supported `--input-type` values are `make_dry_run`, `build_log`, `file_list`,
 `dependency_file`, `preprocessed_source`, and `macro_listing`. A validated saved
 Make dry-run is parsed through the same adapter as live Make output and can also

@@ -7,7 +7,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Sequence
 
-from cintel.application import parse_assignments
+from cintel.application import parse_assignments, parse_path_placeholders
 from cintel.cli.presentation import (
     render_build_discovery,
     render_compilation_units,
@@ -54,6 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[item.value for item in InputArtifactType],
         default=InputArtifactType.MAKE_DRY_RUN.value,
         help="Type of evidence supplied with --input-file",
+    )
+    parser.add_argument(
+        "--path-placeholder",
+        action="append",
+        default=[],
+        metavar="OLD=NEW",
+        help=(
+            "Replace OLD with NEW when reading an imported Make dry-run "
+            "before parsing; repeatable"
+        ),
     )
 
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -131,6 +141,7 @@ def _run_recovery(app, args) -> int:
             configuration,
             args.input_file,
             InputArtifactType(args.input_type),
+            parse_path_placeholders(args.path_placeholder, "--path-placeholder"),
         )
     print(render_recovery(result, args.json))
     return (
@@ -165,6 +176,7 @@ def _run_build_discover(app, config, args) -> int:
             configuration,
             args.input_file,
             InputArtifactType.MAKE_DRY_RUN,
+            parse_path_placeholders(args.path_placeholder, "--path-placeholder"),
         )
         if recovery.build_result is None:
             print(render_recovery(recovery, args.json))

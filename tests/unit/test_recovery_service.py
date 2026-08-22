@@ -10,7 +10,10 @@ from cintel.adapters.artifacts import (
 from cintel.adapters.guidance import StandardInputGuidanceProvider
 from cintel.adapters.reports import MarkdownGuidanceRenderer
 from cintel.adapters.storage import SQLiteAnalysisStorage
-from cintel.application.recovery import GuidedRecoveryService
+from cintel.application.recovery import (
+    GuidedRecoveryService,
+    parse_path_placeholders,
+)
 from cintel.application.scanning import ScanWorkflowResult
 from cintel.configuration.models import AppConfig
 from cintel.domain.models import (
@@ -249,6 +252,40 @@ class GuidedRecoveryServiceTests(unittest.TestCase):
                 "different build configuration",
                 " ".join(mismatched[0].validation_messages),
             )
+
+    def test_custom_path_placeholders_are_applied_to_saved_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app_config, service, discovery = self._service(root)
+            configuration = self._configuration(app_config, "linux")
+            source = root / "dry-run.txt"
+            source.write_text(
+                "gcc -c @BUILD_ROOT@/src/main.c -o main.o\n", encoding="utf-8"
+            )
+
+            service.resume(
+                app_config,
+                configuration,
+                input_file=source,
+                path_placeholders=(("@BUILD_ROOT@", app_config.repository_root),),
+            )
+
+            self.assertEqual(1, len(discovery.saved_outputs))
+            raw_output, _ = discovery.saved_outputs[0]
+            self.assertNotIn("@BUILD_ROOT@", raw_output)
+            self.assertIn(app_config.repository_root, raw_output)
+
+    def test_placeholder_parsing_rejects_malformed_values(self) -> None:
+        from cintel.domain.errors import ConfigurationError
+
+        with self.assertRaises(ConfigurationError):
+            parse_path_placeholders(["missing-separator"], "--path-placeholder")
+        with self.assertRaises(ConfigurationError):
+            parse_path_placeholders(["=target"], "--path-placeholder")
+        self.assertEqual(
+            (("<FIXTURE_ROOT>", "/repo"),),
+            parse_path_placeholders(["<FIXTURE_ROOT>=/repo"], "--path-placeholder"),
+        )
 
     def test_instructions_regenerate_the_report_without_importing_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

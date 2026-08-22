@@ -20,6 +20,7 @@ from cintel.application.scanning import RepositoryScanService
 from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
 from cintel.domain.diagnostics import Diagnostic
+from cintel.domain.errors import ConfigurationError
 from cintel.domain.models import (
     ArtifactValidationStatus,
     BuildConfiguration,
@@ -112,6 +113,7 @@ class GuidedRecoveryService:
         configuration: BuildConfiguration | None,
         input_file: Path | None = None,
         artifact_type: InputArtifactType = InputArtifactType.MAKE_DRY_RUN,
+        path_placeholders: tuple[tuple[str, str], ...] = (),
     ) -> RecoveryResult:
         scan = self._scanner.scan(app_config).scan
         repository_id = scan.repository.id
@@ -126,6 +128,7 @@ class GuidedRecoveryService:
                     artifact_type,
                     repository_id,
                     storage,
+                    path_placeholders,
                 )
                 diagnostics.extend(import_diagnostics)
 
@@ -255,6 +258,7 @@ class GuidedRecoveryService:
         artifact_type: InputArtifactType,
         repository_id: str,
         storage: AnalysisStorage,
+        path_placeholders: tuple[tuple[str, str], ...] = (),
     ) -> tuple[BuildDiscoveryResult | None, tuple[Diagnostic, ...]]:
         command_used = (
             redact_assignment_arguments(self._build_discovery.preview(configuration))
@@ -280,9 +284,11 @@ class GuidedRecoveryService:
             return None, ()
         if configuration is None:
             return None, (missing_build_diagnostic(None),)
-        raw_output = self._artifact_provider.read_text(artifact).replace(
-            "<FIXTURE_ROOT>", app_config.repository_root
-        )
+        raw_output = self._artifact_provider.read_text(artifact)
+        for placeholder, replacement in _path_placeholders(
+            path_placeholders, app_config
+        ):
+            raw_output = raw_output.replace(placeholder, replacement)
         result = self._build_discovery.discover_saved(
             app_config, configuration, raw_output, artifact.content_hash
         )
@@ -328,3 +334,31 @@ class GuidedRecoveryService:
                 updated_at=datetime.now(timezone.utc),
             )
         )
+
+
+DEFAULT_PLACEHOLDER_NAME = "<FIXTURE_ROOT>"
+
+
+def parse_path_placeholders(
+    values: list[str] | None, option_name: str
+) -> tuple[tuple[str, str], ...]:
+    placeholders: list[tuple[str, str]] = []
+    for value in values or []:
+        if "=" not in value:
+            raise ConfigurationError(f"{option_name} requires OLD=NEW: {value}")
+        old, new = value.split("=", 1)
+        if not old:
+            raise ConfigurationError(
+                f"Empty placeholder name for {option_name}: {value}"
+            )
+        placeholders.append((old, new))
+    return tuple(placeholders)
+
+
+def _path_placeholders(
+    path_placeholders: tuple[tuple[str, str], ...], app_config: AppConfig
+) -> tuple[tuple[str, str], ...]:
+    return (
+        (DEFAULT_PLACEHOLDER_NAME, app_config.repository_root),
+        *path_placeholders,
+    )
