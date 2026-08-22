@@ -287,16 +287,8 @@ class MakeBuildDiscovery:
                 )
                 continue
             if _is_cd(tokens):
-                target = Path(tokens[1])
-                if not target.is_absolute():
-                    target = effective_directory / target
-                effective_directory = target.resolve()
-                commands.append(
-                    RawBuildCommand(
-                        raw_content=raw_segment,
-                        working_directory=str(stack_top),
-                        classification=CommandClassification.DIRECTORY_CHANGE,
-                    )
+                effective_directory = _change_directory(
+                    tokens, stack_top, effective_directory, raw_segment, commands
                 )
                 continue
             parsed = self._compiler_parser.parse(
@@ -314,25 +306,30 @@ class MakeBuildDiscovery:
                         classification=CommandClassification.COMPILER,
                     )
                 )
-                for invocation in parsed:
-                    invocations.append(invocation)
-                    diagnostics.extend(invocation.parse_diagnostics)
-                    self._record_invocation(
-                        invocation, configuration, units, diagnostics
-                    )
+                self._record_parsed_invocations(
+                    parsed, configuration, invocations, units, diagnostics
+                )
                 continue
-            classification = (
-                CommandClassification.RECURSIVE_MAKE
-                if _is_recursive_make(tokens)
-                else CommandClassification.OTHER
-            )
             commands.append(
                 RawBuildCommand(
                     raw_content=raw_segment,
                     working_directory=str(effective_directory),
-                    classification=classification,
+                    classification=_non_compiler_classification(tokens),
                 )
             )
+
+    def _record_parsed_invocations(
+        self,
+        parsed: tuple[CompilerInvocation, ...],
+        configuration: BuildConfiguration,
+        invocations: list[CompilerInvocation],
+        units: list[CompilationUnit],
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        for invocation in parsed:
+            invocations.append(invocation)
+            diagnostics.extend(invocation.parse_diagnostics)
+            self._record_invocation(invocation, configuration, units, diagnostics)
 
     def _record_invocation(
         self,
@@ -528,6 +525,35 @@ def _capability_records(
                 else "No compiler executable was available to identify."
             ),
         ),
+    )
+
+
+def _change_directory(
+    tokens: list[str],
+    stack_top: Path,
+    effective_directory: Path,
+    raw_segment: str,
+    commands: list[RawBuildCommand],
+) -> Path:
+    target = Path(tokens[1])
+    if not target.is_absolute():
+        target = effective_directory / target
+    resolved = target.resolve()
+    commands.append(
+        RawBuildCommand(
+            raw_content=raw_segment,
+            working_directory=str(stack_top),
+            classification=CommandClassification.DIRECTORY_CHANGE,
+        )
+    )
+    return resolved
+
+
+def _non_compiler_classification(tokens: list[str]) -> CommandClassification:
+    return (
+        CommandClassification.RECURSIVE_MAKE
+        if _is_recursive_make(tokens)
+        else CommandClassification.OTHER
     )
 
 
