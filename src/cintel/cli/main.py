@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import shlex
 import sys
+from enum import IntEnum
 from pathlib import Path
 from typing import Sequence
 
@@ -20,6 +21,12 @@ from cintel.configuration.loader import default_config, load_config
 from cintel.domain.errors import CintelError
 from cintel.domain.models import InputArtifactType, WorkflowStatus
 from cintel.utilities.secrets import redact_assignment_arguments
+
+
+class ExitCode(IntEnum):
+    SUCCESS = 0
+    NO_MATCH = 1
+    FAILURE = 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,12 +86,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     handler = _HANDLERS.get(args.command)
     if handler is None:
         parser.error(f"Unsupported command: {args.command}")
-        return 2
+        return int(ExitCode.FAILURE)
     try:
-        return handler(app, args)
+        return int(handler(app, args))
     except CintelError as exc:
         print(f"cintel: {exc}", file=sys.stderr)
-        return 2
+        return int(ExitCode.FAILURE)
 
 
 def _run_init(app, args) -> int:
@@ -94,7 +101,7 @@ def _run_init(app, args) -> int:
         args.output_directory,
     )
     print(render_initialization(result, args.json))
-    return 0
+    return ExitCode.SUCCESS
 
 
 def _run_doctor(app, args) -> int:
@@ -126,7 +133,11 @@ def _run_recovery(app, args) -> int:
             InputArtifactType(args.input_type),
         )
     print(render_recovery(result, args.json))
-    return 2 if result.status is WorkflowStatus.INTERRUPTED else 0
+    return (
+        ExitCode.FAILURE
+        if result.status is WorkflowStatus.INTERRUPTED
+        else ExitCode.SUCCESS
+    )
 
 
 def _run_build(app, args) -> int:
@@ -136,14 +147,14 @@ def _run_build(app, args) -> int:
     if args.build_command == "units":
         units = app.build_discovery.list_units(config, args.build_config)
         print(render_compilation_units(units, args.json))
-        return 0
+        return ExitCode.SUCCESS
     if args.build_command == "show":
         units = app.build_discovery.show_source(
             config, args.source_file, args.build_config
         )
         print(render_compilation_units(units, args.json))
-        return 0 if units else 1
-    return 2
+        return ExitCode.SUCCESS if units else ExitCode.NO_MATCH
+    return ExitCode.FAILURE
 
 
 def _run_build_discover(app, config, args) -> int:
@@ -157,9 +168,9 @@ def _run_build_discover(app, config, args) -> int:
         )
         if recovery.build_result is None:
             print(render_recovery(recovery, args.json))
-            return 2
+            return ExitCode.FAILURE
         print(render_build_discovery(recovery.build_result, args.json))
-        return 0
+        return ExitCode.SUCCESS
     preview = app.build_discovery.preview(configuration)
     interactive = not args.non_interactive and sys.stdin.isatty()
     if args.verbose or interactive:
@@ -178,7 +189,7 @@ def _run_build_discover(app, config, args) -> int:
         answer = input("Proceed with Makefile evaluation? [y/N] ")
         if answer.strip().lower() not in {"y", "yes"}:
             print("Build discovery cancelled.", file=sys.stderr)
-            return 2
+            return ExitCode.FAILURE
     result = app.build_discovery.discover(
         config, configuration, force=args.force_build_discovery
     )
@@ -197,8 +208,9 @@ _HANDLERS = {
 }
 
 
-def _diagnostics_exit_code(diagnostics) -> int:
-    return 2 if any(item.severity.value == "error" for item in diagnostics) else 0
+def _diagnostics_exit_code(diagnostics) -> ExitCode:
+    has_error = any(item.severity.value == "error" for item in diagnostics)
+    return ExitCode.FAILURE if has_error else ExitCode.SUCCESS
 
 
 def _resolve_config(

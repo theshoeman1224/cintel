@@ -8,6 +8,7 @@ from pathlib import Path
 from cintel.configuration.models import AppConfig
 from cintel.domain.diagnostics import (
     Diagnostic,
+    DiagnosticCode,
     DiagnosticSeverity,
     Recoverability,
 )
@@ -39,7 +40,7 @@ class DoctorService:
         if not root.is_dir():
             diagnostics.append(
                 Diagnostic(
-                    code="CI-REPO-001",
+                    code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
                     severity=DiagnosticSeverity.ERROR,
                     message="The repository root does not exist or is not a directory.",
                     technical_details=str(root),
@@ -60,7 +61,7 @@ class DoctorService:
         if not make_available:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-BUILD-001",
+                    code=DiagnosticCode.MAKE_NOT_EXECUTABLE,
                     severity=DiagnosticSeverity.WARNING,
                     message="GNU Make was not found.",
                     technical_details="Build discovery cannot run Make dry-run evaluation.",
@@ -79,7 +80,7 @@ class DoctorService:
         if not gcc_available:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-COMP-001",
+                    code=DiagnosticCode.NO_COMPILER_RECOGNIZED,
                     severity=DiagnosticSeverity.WARNING,
                     message="GCC or a cross-GCC executable was not found.",
                     technical_details="Compiler enrichment will be unavailable.",
@@ -95,7 +96,7 @@ class DoctorService:
         if not writable:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-REPO-001",
+                    code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
                     severity=DiagnosticSeverity.ERROR,
                     message="The output directory cannot be created or written.",
                     technical_details=config.output_directory,
@@ -110,7 +111,7 @@ class DoctorService:
         if not detected["makefiles"]:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-BUILD-002",
+                    code=DiagnosticCode.MAKE_DRY_RUN_INCOMPLETE,
                     severity=DiagnosticSeverity.INFO,
                     message="No Makefile or .mk file was detected.",
                     missing_capability="make_build_discovery",

@@ -6,12 +6,19 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity, Recoverability
+from cintel.domain.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+    Recoverability,
+)
 from cintel.domain.models import (
     AnalysisCapability,
     BuildConfiguration,
     BuildDiscoveryResult,
     CapabilityStatus,
+    CommandClassification,
+    ProcessExitCode,
     CommandRequest,
     CommandResult,
     CommandRisk,
@@ -274,7 +281,7 @@ class MakeBuildDiscovery:
                     RawBuildCommand(
                         raw_content=raw_segment,
                         working_directory=str(effective_directory),
-                        classification="unparsed",
+                        classification=CommandClassification.UNPARSED,
                         parse_diagnostic=diagnostic,
                     )
                 )
@@ -288,7 +295,7 @@ class MakeBuildDiscovery:
                     RawBuildCommand(
                         raw_content=raw_segment,
                         working_directory=str(stack_top),
-                        classification="directory_change",
+                        classification=CommandClassification.DIRECTORY_CHANGE,
                     )
                 )
                 continue
@@ -304,7 +311,7 @@ class MakeBuildDiscovery:
                     RawBuildCommand(
                         raw_content=raw_segment,
                         working_directory=str(effective_directory),
-                        classification="compiler",
+                        classification=CommandClassification.COMPILER,
                     )
                 )
                 for invocation in parsed:
@@ -315,7 +322,9 @@ class MakeBuildDiscovery:
                     )
                 continue
             classification = (
-                "recursive_make" if _is_recursive_make(tokens) else "other"
+                CommandClassification.RECURSIVE_MAKE
+                if _is_recursive_make(tokens)
+                else CommandClassification.OTHER
             )
             commands.append(
                 RawBuildCommand(
@@ -336,7 +345,7 @@ class MakeBuildDiscovery:
             if not Path(forced_include.absolute).is_file():
                 diagnostics.append(
                     Diagnostic(
-                        code="CI-BUILD-005",
+                        code=DiagnosticCode.MISSING_FORCED_INCLUDE,
                         severity=DiagnosticSeverity.WARNING,
                         message=(
                             "A compiler command references a missing forced include."
@@ -369,7 +378,7 @@ class MakeBuildDiscovery:
         if not source_exists:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-BUILD-004",
+                    code=DiagnosticCode.MISSING_SOURCE_FILE,
                     severity=DiagnosticSeverity.WARNING,
                     message="A compiler command references a missing source file.",
                     technical_details=(
@@ -410,10 +419,10 @@ def _execution_diagnostics(
     parsed: ParsedMakeOutput,
 ) -> list[Diagnostic]:
     diagnostics = list(parsed.diagnostics)
-    if result.exit_code == 127:
+    if result.exit_code == ProcessExitCode.COMMAND_NOT_FOUND:
         diagnostics.append(
             Diagnostic(
-                code="CI-BUILD-001",
+                code=DiagnosticCode.MAKE_NOT_EXECUTABLE,
                 severity=DiagnosticSeverity.ERROR,
                 message="GNU Make could not be executed.",
                 technical_details=result.standard_error,
@@ -428,7 +437,7 @@ def _execution_diagnostics(
     elif result.exit_code != 0:
         diagnostics.append(
             Diagnostic(
-                code="CI-BUILD-002",
+                code=DiagnosticCode.MAKE_DRY_RUN_INCOMPLETE,
                 severity=DiagnosticSeverity.WARNING,
                 message="GNU Make dry-run evaluation did not complete successfully.",
                 technical_details=(
@@ -445,7 +454,7 @@ def _execution_diagnostics(
     if not parsed.compiler_invocations:
         diagnostics.append(
             Diagnostic(
-                code="CI-COMP-001",
+                code=DiagnosticCode.NO_COMPILER_RECOGNIZED,
                 severity=DiagnosticSeverity.WARNING,
                 message="No recognizable C compiler command was found in Make output.",
                 technical_details="The raw dry-run output and other commands were preserved.",
@@ -467,7 +476,7 @@ def _capability_records(
     units = parsed.compilation_units
     parse_diagnostics = parsed.diagnostics
 
-    if exit_code == 127:
+    if exit_code == ProcessExitCode.COMMAND_NOT_FOUND:
         discovery_status = CapabilityStatus.UNAVAILABLE
     elif exit_code != 0 or not units or parse_diagnostics:
         discovery_status = CapabilityStatus.DEGRADED
@@ -622,7 +631,7 @@ def _is_make_message(value: str) -> bool:
 
 def _build_parse_diagnostic(raw: str, detail: str) -> Diagnostic:
     return Diagnostic(
-        code="CI-BUILD-003",
+        code=DiagnosticCode.COMMAND_UNPARSEABLE,
         severity=DiagnosticSeverity.WARNING,
         message="A Make dry-run command could not be parsed safely.",
         technical_details=f"{detail}: {raw}",

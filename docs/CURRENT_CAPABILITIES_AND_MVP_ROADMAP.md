@@ -298,6 +298,12 @@ The codebase currently emits stable codes in these families:
 - `CI-INPUT-001` through `CI-INPUT-003`; and
 - `CI-PARSE-001`.
 
+These identifiers are defined once as the `DiagnosticCode` enumeration in
+`cintel.domain.diagnostics`; the string values are the public contract.
+Command classifications (`compiler`, `directory_change`, `unparsed`,
+`recursive_make`, `other`) are likewise defined as `CommandClassification`,
+and workflow stages as `WorkflowStage`, both in `cintel.domain.models`.
+
 The domain diagnostic includes severity, message, technical details, missing
 capability, recoverability, suggested actions, related paths, related commands,
 and metadata.

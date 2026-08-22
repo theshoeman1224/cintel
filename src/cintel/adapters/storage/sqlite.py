@@ -27,6 +27,7 @@ from cintel.domain.models import (
     SourceSymbol,
     TypeSymbol,
     VariableSymbol,
+    WorkflowStage,
     WorkflowState,
     WorkflowStatus,
 )
@@ -465,7 +466,7 @@ class SQLiteAnalysisStorage:
         return tuple(
             WorkflowState(
                 repository_id=row[0],
-                stage=row[1],
+                stage=WorkflowStage(row[1]),
                 status=WorkflowStatus(row[2]),
                 updated_at=datetime.fromisoformat(row[3]),
                 details=tuple(sorted(json.loads(row[4]).items())),

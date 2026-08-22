@@ -6,7 +6,12 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity, Recoverability
+from cintel.domain.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+    Recoverability,
+)
 from cintel.domain.models import (
     AnalysisCapability,
     CapabilityStatus,
@@ -42,7 +47,7 @@ class FileSystemRepositoryDiscovery:
         )
         if not root.is_dir():
             diagnostic = Diagnostic(
-                code="CI-REPO-001",
+                code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
                 severity=DiagnosticSeverity.ERROR,
                 message="The repository root does not exist or is not a directory.",
                 technical_details=str(root),
@@ -76,7 +81,7 @@ class FileSystemRepositoryDiscovery:
         def record_walk_error(error: OSError) -> None:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-REPO-002",
+                    code=DiagnosticCode.DIRECTORY_UNREADABLE,
                     severity=DiagnosticSeverity.WARNING,
                     message="A repository directory could not be read.",
                     technical_details=str(error),
@@ -108,7 +113,7 @@ class FileSystemRepositoryDiscovery:
                 if absolute_path.is_symlink():
                     diagnostics.append(
                         Diagnostic(
-                            code="CI-REPO-003",
+                            code=DiagnosticCode.SOURCE_SYMLINK_SKIPPED,
                             severity=DiagnosticSeverity.WARNING,
                             message="A symbolic-link source or build file was skipped.",
                             technical_details="Scanning linked content could read outside the repository.",
@@ -138,7 +143,7 @@ class FileSystemRepositoryDiscovery:
                 except OSError as error:
                     diagnostics.append(
                         Diagnostic(
-                            code="CI-REPO-004",
+                            code=DiagnosticCode.FILE_UNREADABLE,
                             severity=DiagnosticSeverity.WARNING,
                             message="A repository file could not be read or hashed.",
                             technical_details=str(error),

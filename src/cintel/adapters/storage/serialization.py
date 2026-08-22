@@ -16,6 +16,7 @@ from cintel.domain.models import (
     BuildDiscoveryResult,
     CallRelationship,
     CapabilityStatus,
+    CommandClassification,
     CompilationUnit,
     CompilerArgumentSet,
     CompilerInvocation,
@@ -97,7 +98,7 @@ def build_result_from_dict(data: dict) -> BuildDiscoveryResult:
             RawBuildCommand(
                 raw_content=item["raw_content"],
                 working_directory=item["working_directory"],
-                classification=item["classification"],
+                classification=CommandClassification(item["classification"]),
                 parse_diagnostic=(
                     diagnostic_from_dict(item["parse_diagnostic"])
                     if item.get("parse_diagnostic")

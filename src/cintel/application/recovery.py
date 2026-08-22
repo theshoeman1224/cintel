@@ -30,6 +30,7 @@ from cintel.domain.models import (
     InputArtifactType,
     RecoveryResult,
     StalenessStatus,
+    WorkflowStage,
     WorkflowState,
     WorkflowStatus,
 )
@@ -72,7 +73,7 @@ class GuidedRecoveryService:
             self._save_state(
                 storage,
                 scan.repository.id,
-                "repository_scan",
+                WorkflowStage.REPOSITORY_SCAN,
                 WorkflowStatus.COMPLETED,
             )
             setup_status = (
@@ -80,7 +81,7 @@ class GuidedRecoveryService:
                 if units
                 else WorkflowStatus.PENDING
             )
-            self._save_state(storage, scan.repository.id, "guided_recovery", setup_status)
+            self._save_state(storage, scan.repository.id, WorkflowStage.GUIDED_RECOVERY, setup_status)
         return self._result(
             app_config,
             configuration,
@@ -144,13 +145,13 @@ class GuidedRecoveryService:
                 diagnostics.append(missing_build_diagnostic(configuration))
             status = recovery_status(tuple(diagnostics), bool(units), artifacts)
             storage.save_diagnostics(repository_id, tuple(diagnostics), "recovery:resume")
-            self._save_state(storage, repository_id, "input_validation", status)
-            self._save_state(storage, repository_id, "guided_recovery", status)
+            self._save_state(storage, repository_id, WorkflowStage.INPUT_VALIDATION, status)
+            self._save_state(storage, repository_id, WorkflowStage.GUIDED_RECOVERY, status)
             if units:
                 self._save_state(
                     storage,
                     repository_id,
-                    "build_discovery",
+                    WorkflowStage.BUILD_DISCOVERY,
                     WorkflowStatus.COMPLETED,
                 )
         return self._result(
@@ -213,7 +214,9 @@ class GuidedRecoveryService:
                 state.stage for state in states if state.status is WorkflowStatus.COMPLETED
             ),
             interrupted_stage=(
-                "input_validation" if status is WorkflowStatus.INTERRUPTED else None
+                WorkflowStage.INPUT_VALIDATION
+                if status is WorkflowStatus.INTERRUPTED
+                else None
             ),
             required_inputs_report=str(report_path),
             build_result=build_result,

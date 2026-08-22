@@ -7,7 +7,12 @@ import subprocess
 import time
 from pathlib import Path
 
-from cintel.domain.models import CommandRequest, CommandResult, OutputDestination
+from cintel.domain.models import (
+    CommandRequest,
+    CommandResult,
+    OutputDestination,
+    ProcessExitCode,
+)
 
 
 class SubprocessCommandRunner:
@@ -36,11 +41,11 @@ class SubprocessCommandRunner:
             timed_out = True
             stdout = _as_text(exc.stdout)
             stderr = _as_text(exc.stderr)
-            exit_code = 124
+            exit_code = ProcessExitCode.TIMED_OUT
         except OSError as exc:
             stdout = ""
             stderr = str(exc)
-            exit_code = 127
+            exit_code = ProcessExitCode.COMMAND_NOT_FOUND
 
         duration = time.monotonic() - started
         if request.output_destination is OutputDestination.FILE:

@@ -11,6 +11,7 @@ from pathlib import Path
 from cintel.adapters.parsing.lexical import MaskIssue, mask_c_non_code
 from cintel.domain.diagnostics import (
     Diagnostic,
+    DiagnosticCode,
     DiagnosticSeverity,
     Recoverability,
 )
@@ -992,7 +993,7 @@ def _diagnostic(
             "end_column": str(location.end_column or location.column),
         }
     return Diagnostic(
-        code="CI-PARSE-001",
+        code=DiagnosticCode.CONSERVATIVE_PARSE_LIMITATION,
         severity=DiagnosticSeverity.WARNING,
         message=message,
         technical_details=technical_details,

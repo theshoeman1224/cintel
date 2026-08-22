@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cintel.domain.diagnostics import Diagnostic
+from cintel.domain.diagnostics import Diagnostic, DiagnosticCode
 from cintel.domain.models import BuildConfiguration, CommandInstruction, CommandRisk
 from cintel.utilities.secrets import redact_value
 
@@ -83,7 +83,12 @@ class StandardInputGuidanceProvider:
             {
                 path
                 for diagnostic in diagnostics
-                if diagnostic.code in {"CI-BUILD-004", "CI-BUILD-005", "CI-INPUT-003"}
+                if diagnostic.code
+                in {
+                    DiagnosticCode.MISSING_SOURCE_FILE,
+                    DiagnosticCode.MISSING_FORCED_INCLUDE,
+                    DiagnosticCode.INPUT_ARTIFACT_STALE,
+                }
                 for path in diagnostic.related_paths
             }
         )
