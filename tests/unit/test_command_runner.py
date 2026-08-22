@@ -57,3 +57,22 @@ class CommandRunnerTests(unittest.TestCase):
             )
             self.assertEqual(127, result.exit_code)
             self.assertTrue(result.standard_error)
+
+    def test_timeout_reports_flag_exit_code_and_partial_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = SubprocessCommandRunner().run(
+                CommandRequest(
+                    arguments=(
+                        sys.executable,
+                        "-c",
+                        "print('started', flush=True); import time; time.sleep(10)",
+                    ),
+                    working_directory=directory,
+                    timeout_seconds=0.5,
+                    risk=CommandRisk.MAKEFILE_EVALUATION,
+                )
+            )
+            self.assertTrue(result.timed_out)
+            self.assertEqual(124, result.exit_code)
+            self.assertIn("started", result.standard_output)
+            self.assertLess(result.duration_seconds, 10)

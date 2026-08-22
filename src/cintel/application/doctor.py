@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 import os
 import shutil
 import sys
@@ -9,6 +8,7 @@ from pathlib import Path
 from cintel.configuration.models import AppConfig
 from cintel.domain.diagnostics import (
     Diagnostic,
+    DiagnosticCode,
     DiagnosticSeverity,
     Recoverability,
 )
@@ -21,6 +21,7 @@ from cintel.domain.models import (
     ToolStatus,
 )
 from cintel.ports.commands import CommandRunner
+from cintel.utilities.paths import is_excluded
 
 
 class DoctorService:
@@ -39,7 +40,7 @@ class DoctorService:
         if not root.is_dir():
             diagnostics.append(
                 Diagnostic(
-                    code="CI-REPO-001",
+                    code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
                     severity=DiagnosticSeverity.ERROR,
                     message="The repository root does not exist or is not a directory.",
                     technical_details=str(root),
@@ -60,7 +61,7 @@ class DoctorService:
         if not make_available:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-BUILD-001",
+                    code=DiagnosticCode.MAKE_NOT_EXECUTABLE,
                     severity=DiagnosticSeverity.WARNING,
                     message="GNU Make was not found.",
                     technical_details="Build discovery cannot run Make dry-run evaluation.",
@@ -79,7 +80,7 @@ class DoctorService:
         if not gcc_available:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-COMP-001",
+                    code=DiagnosticCode.NO_COMPILER_RECOGNIZED,
                     severity=DiagnosticSeverity.WARNING,
                     message="GCC or a cross-GCC executable was not found.",
                     technical_details="Compiler enrichment will be unavailable.",
@@ -95,7 +96,7 @@ class DoctorService:
         if not writable:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-REPO-001",
+                    code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
                     severity=DiagnosticSeverity.ERROR,
                     message="The output directory cannot be created or written.",
                     technical_details=config.output_directory,
@@ -110,7 +111,7 @@ class DoctorService:
         if not detected["makefiles"]:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-BUILD-002",
+                    code=DiagnosticCode.MAKE_DRY_RUN_INCOMPLETE,
                     severity=DiagnosticSeverity.INFO,
                     message="No Makefile or .mk file was detected.",
                     missing_capability="make_build_discovery",
@@ -238,9 +239,11 @@ class DoctorService:
             names[:] = [
                 name
                 for name in names
-                if not _excluded(relative_dir / name, exclusions)
+                if not is_excluded(relative_dir / name, exclusions)
             ]
             for filename in files:
+                if is_excluded(relative_dir / filename, exclusions):
+                    continue
                 relative = (relative_dir / filename).as_posix()
                 lower = filename.lower()
                 if filename in {"Makefile", "makefile", "GNUmakefile"} or filename.endswith(".mk"):
@@ -261,14 +264,6 @@ def _directory_can_be_written(path: Path) -> bool:
     while not candidate.exists() and candidate != candidate.parent:
         candidate = candidate.parent
     return candidate.is_dir() and os.access(candidate, os.W_OK | os.X_OK)
-
-
-def _excluded(relative: Path, patterns: tuple[str, ...]) -> bool:
-    value = relative.as_posix()
-    return any(
-        fnmatch.fnmatch(relative.name, pattern) or fnmatch.fnmatch(value, pattern)
-        for pattern in patterns
-    )
 
 
 def _cross_gcc_candidates() -> tuple[tuple[str, str], ...]:

@@ -26,3 +26,17 @@ class RepositoryReportTests(unittest.TestCase):
             self.assertEqual("calculated_metric", payload["metrics"]["classification"])
             self.assertEqual("extracted_fact", payload["files"][0]["classification"])
 
+    def test_markdown_labels_build_awareness_as_scan_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "main.c").write_text("int main(void) { return 0; }\n", encoding="utf-8")
+            scan = FileSystemRepositoryDiscovery().discover(
+                str(root), "repository-1", ()
+            )
+
+            markdown = MarkdownReportRenderer().render("repository_inventory", scan)
+
+        self.assertIn("reflects repository scanning only", markdown)
+        self.assertIn("`cintel build discover`", markdown)
+        self.assertNotIn("until Phase 3", markdown)
+

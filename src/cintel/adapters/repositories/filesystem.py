@@ -6,7 +6,12 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity, Recoverability
+from cintel.domain.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+    Recoverability,
+)
 from cintel.domain.models import (
     AnalysisCapability,
     CapabilityStatus,
@@ -16,6 +21,7 @@ from cintel.domain.models import (
     RepositoryScan,
 )
 from cintel.utilities.hashing import sha256_file, stable_id
+from cintel.utilities.paths import is_excluded
 
 
 class FileSystemRepositoryDiscovery:
@@ -41,7 +47,7 @@ class FileSystemRepositoryDiscovery:
         )
         if not root.is_dir():
             diagnostic = Diagnostic(
-                code="CI-REPO-001",
+                code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
                 severity=DiagnosticSeverity.ERROR,
                 message="The repository root does not exist or is not a directory.",
                 technical_details=str(root),
@@ -75,7 +81,7 @@ class FileSystemRepositoryDiscovery:
         def record_walk_error(error: OSError) -> None:
             diagnostics.append(
                 Diagnostic(
-                    code="CI-REPO-002",
+                    code=DiagnosticCode.DIRECTORY_UNREADABLE,
                     severity=DiagnosticSeverity.WARNING,
                     message="A repository directory could not be read.",
                     technical_details=str(error),
@@ -93,11 +99,11 @@ class FileSystemRepositoryDiscovery:
             directory_names[:] = sorted(
                 name
                 for name in directory_names
-                if not _is_excluded(relative_directory / name, exclusions)
+                if not is_excluded(relative_directory / name, exclusions)
             )
             for name in sorted(file_names):
                 relative_path = relative_directory / name
-                if _is_excluded(relative_path, exclusions):
+                if is_excluded(relative_path, exclusions):
                     continue
                 kind = _classify_file(name)
                 if kind is None:
@@ -107,7 +113,7 @@ class FileSystemRepositoryDiscovery:
                 if absolute_path.is_symlink():
                     diagnostics.append(
                         Diagnostic(
-                            code="CI-REPO-003",
+                            code=DiagnosticCode.SOURCE_SYMLINK_SKIPPED,
                             severity=DiagnosticSeverity.WARNING,
                             message="A symbolic-link source or build file was skipped.",
                             technical_details="Scanning linked content could read outside the repository.",
@@ -137,7 +143,7 @@ class FileSystemRepositoryDiscovery:
                 except OSError as error:
                     diagnostics.append(
                         Diagnostic(
-                            code="CI-REPO-004",
+                            code=DiagnosticCode.FILE_UNREADABLE,
                             severity=DiagnosticSeverity.WARNING,
                             message="A repository file could not be read or hashed.",
                             technical_details=str(error),
@@ -182,7 +188,10 @@ class FileSystemRepositoryDiscovery:
             AnalysisCapability(
                 name="build_target_membership",
                 status=CapabilityStatus.UNAVAILABLE,
-                reason="Make build discovery is not implemented until Phase 3.",
+                reason=(
+                    "Membership comes from Make build discovery runs; "
+                    "scanning records only build inputs."
+                ),
             ),
         )
         return RepositoryScan(
@@ -206,13 +215,3 @@ def _classify_file(name: str) -> FileKind | None:
     if name.endswith(".mk"):
         return FileKind.MAKE_FRAGMENT
     return None
-
-
-def _is_excluded(relative_path: Path, patterns: tuple[str, ...]) -> bool:
-    text = relative_path.as_posix()
-    return any(
-        fnmatch.fnmatch(relative_path.name, pattern)
-        or fnmatch.fnmatch(text, pattern)
-        or any(fnmatch.fnmatch(part, pattern) for part in relative_path.parts)
-        for pattern in patterns
-    )

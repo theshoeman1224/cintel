@@ -17,6 +17,7 @@ from cintel.application.recovery_policy import (
     stale_artifact_diagnostic,
 )
 from cintel.application.scanning import RepositoryScanService
+from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
 from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
@@ -29,6 +30,7 @@ from cintel.domain.models import (
     InputArtifactType,
     RecoveryResult,
     StalenessStatus,
+    WorkflowStage,
     WorkflowState,
     WorkflowStatus,
 )
@@ -36,6 +38,7 @@ from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.services import InputArtifactProvider, InputGuidanceProvider, ReportRenderer
 from cintel.ports.storage import AnalysisStorage
 from cintel.utilities.hashing import stable_id
+from cintel.utilities.paths import stable_repository_id
 from cintel.utilities.secrets import redact_assignment_arguments
 
 
@@ -70,7 +73,7 @@ class GuidedRecoveryService:
             self._save_state(
                 storage,
                 scan.repository.id,
-                "repository_scan",
+                WorkflowStage.REPOSITORY_SCAN,
                 WorkflowStatus.COMPLETED,
             )
             setup_status = (
@@ -78,7 +81,7 @@ class GuidedRecoveryService:
                 if units
                 else WorkflowStatus.PENDING
             )
-            self._save_state(storage, scan.repository.id, "guided_recovery", setup_status)
+            self._save_state(storage, scan.repository.id, WorkflowStage.GUIDED_RECOVERY, setup_status)
         return self._result(
             app_config,
             configuration,
@@ -142,13 +145,13 @@ class GuidedRecoveryService:
                 diagnostics.append(missing_build_diagnostic(configuration))
             status = recovery_status(tuple(diagnostics), bool(units), artifacts)
             storage.save_diagnostics(repository_id, tuple(diagnostics), "recovery:resume")
-            self._save_state(storage, repository_id, "input_validation", status)
-            self._save_state(storage, repository_id, "guided_recovery", status)
+            self._save_state(storage, repository_id, WorkflowStage.INPUT_VALIDATION, status)
+            self._save_state(storage, repository_id, WorkflowStage.GUIDED_RECOVERY, status)
             if units:
                 self._save_state(
                     storage,
                     repository_id,
-                    "build_discovery",
+                    WorkflowStage.BUILD_DISCOVERY,
                     WorkflowStatus.COMPLETED,
                 )
         return self._result(
@@ -185,9 +188,7 @@ class GuidedRecoveryService:
         report_path = Path(app_config.output_directory) / "REQUIRED_INPUTS.md"
         content = self._guidance_renderer.render("required_inputs", instructions)
         self._artifact_writer.write_text(report_path, content)
-        repository_id = stable_id(
-            "repository", str(Path(app_config.repository_root).resolve())
-        )
+        repository_id = stable_repository_id(app_config.repository_root)
         with self._storage(app_config) as storage:
             storage.save_report_metadata(
                 GeneratedReportMetadata(
@@ -213,7 +214,9 @@ class GuidedRecoveryService:
                 state.stage for state in states if state.status is WorkflowStatus.COMPLETED
             ),
             interrupted_stage=(
-                "input_validation" if status is WorkflowStatus.INTERRUPTED else None
+                WorkflowStage.INPUT_VALIDATION
+                if status is WorkflowStatus.INTERRUPTED
+                else None
             ),
             required_inputs_report=str(report_path),
             build_result=build_result,
@@ -221,12 +224,8 @@ class GuidedRecoveryService:
 
     @contextmanager
     def _storage(self, app_config: AppConfig) -> Iterator[AnalysisStorage]:
-        storage = self._storage_factory(Path(app_config.database_path))
-        storage.initialize()
-        try:
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
             yield storage
-        finally:
-            storage.close()
 
     @staticmethod
     def _stored_evidence(

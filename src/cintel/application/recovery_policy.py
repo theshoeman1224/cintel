@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity, Recoverability
+from cintel.domain.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+    Recoverability,
+)
 from cintel.domain.models import (
     AnalysisCapability,
     BuildConfiguration,
@@ -15,7 +20,7 @@ def missing_build_diagnostic(
     configuration: BuildConfiguration | None,
 ) -> Diagnostic:
     return Diagnostic(
-        code="CI-INPUT-001",
+        code=DiagnosticCode.BUILD_EVIDENCE_MISSING,
         severity=DiagnosticSeverity.WARNING,
         message="Build discovery evidence is not available yet.",
         technical_details="No persisted compilation units match the selected workflow.",
@@ -32,7 +37,7 @@ def missing_build_diagnostic(
 
 def invalid_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
     return Diagnostic(
-        code="CI-INPUT-002",
+        code=DiagnosticCode.INPUT_ARTIFACT_INVALID,
         severity=DiagnosticSeverity.ERROR,
         message="The supplied input artifact failed validation.",
         technical_details=" ".join(artifact.validation_messages),
@@ -45,7 +50,7 @@ def invalid_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
 
 def stale_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
     return Diagnostic(
-        code="CI-INPUT-003",
+        code=DiagnosticCode.INPUT_ARTIFACT_STALE,
         severity=DiagnosticSeverity.WARNING,
         message="A previously imported input artifact is stale.",
         technical_details="The preserved file no longer matches its recorded SHA-256 hash.",

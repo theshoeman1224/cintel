@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import shlex
 import sys
+from enum import IntEnum
 from pathlib import Path
 from typing import Sequence
 
@@ -20,6 +21,12 @@ from cintel.configuration.loader import default_config, load_config
 from cintel.domain.errors import CintelError
 from cintel.domain.models import InputArtifactType, WorkflowStatus
 from cintel.utilities.secrets import redact_assignment_arguments
+
+
+class ExitCode(IntEnum):
+    SUCCESS = 0
+    NO_MATCH = 1
+    FAILURE = 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,116 +83,134 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     app = create_application()
-    try:
-        if args.command == "init":
-            result = app.initialization.initialize(
-                args.repository_path,
-                app.storage_factory,
-                args.output_directory,
-            )
-            print(render_initialization(result, args.json))
-            return 0
-
-        if args.command == "doctor":
-            config = _resolve_config(args.config, args.repository, args.output_directory)
-            report = app.doctor.inspect(config)
-            print(render_doctor(report, args.json))
-            return 2 if any(item.severity.value == "error" for item in report.diagnostics) else 0
-
-        if args.command == "scan":
-            config = _resolve_config(args.config, args.repository, args.output_directory)
-            result = app.scanning.scan(config)
-            print(render_scan(result, args.json))
-            return (
-                2
-                if any(
-                    item.severity.value == "error" for item in result.scan.diagnostics
-                )
-                else 0
-            )
-
-        if args.command in {"setup", "instructions", "resume"}:
-            config = _resolve_config(args.config, args.repository, args.output_directory)
-            configuration = _create_build_configuration(app, config, args)
-            if args.command == "setup" and args.input_file is None:
-                result = app.recovery.setup(config, configuration)
-            elif args.command == "instructions":
-                result = app.recovery.instructions(config, configuration)
-            else:
-                result = app.recovery.resume(
-                    config,
-                    configuration,
-                    args.input_file,
-                    InputArtifactType(args.input_type),
-                )
-            print(render_recovery(result, args.json))
-            return 2 if result.status is WorkflowStatus.INTERRUPTED else 0
-
-        if args.command == "build":
-            config = _resolve_config(args.config, args.repository, args.output_directory)
-            if args.build_command == "discover":
-                if args.input_file is not None:
-                    configuration = _create_build_configuration(app, config, args)
-                    recovery = app.recovery.resume(
-                        config,
-                        configuration,
-                        args.input_file,
-                        InputArtifactType.MAKE_DRY_RUN,
-                    )
-                    if recovery.build_result is None:
-                        print(render_recovery(recovery, args.json))
-                        return 2
-                    print(render_build_discovery(recovery.build_result, args.json))
-                    return 0
-                configuration = _create_build_configuration(app, config, args)
-                preview = app.build_discovery.preview(configuration)
-                if args.verbose or (
-                    not args.non_interactive and sys.stdin.isatty()
-                ):
-                    print(
-                        "Make evaluation command: "
-                        + _redacted_command_preview(
-                            preview, configuration.environment_overrides
-                        ),
-                        file=sys.stderr,
-                    )
-                    print(
-                        "Warning: make -n may evaluate $(shell ...) expressions.",
-                        file=sys.stderr,
-                    )
-                if not args.non_interactive and sys.stdin.isatty():
-                    answer = input("Proceed with Makefile evaluation? [y/N] ")
-                    if answer.strip().lower() not in {"y", "yes"}:
-                        print("Build discovery cancelled.", file=sys.stderr)
-                        return 2
-                result = app.build_discovery.discover(
-                    config, configuration, force=args.force_build_discovery
-                )
-                print(render_build_discovery(result, args.json))
-                return (
-                    2
-                    if any(
-                        item.severity.value == "error"
-                        for item in result.diagnostics
-                    )
-                    else 0
-                )
-            if args.build_command == "units":
-                units = app.build_discovery.list_units(config, args.build_config)
-                print(render_compilation_units(units, args.json))
-                return 0
-            if args.build_command == "show":
-                units = app.build_discovery.show_source(
-                    config, args.source_file, args.build_config
-                )
-                print(render_compilation_units(units, args.json))
-                return 0 if units else 1
-
+    handler = _HANDLERS.get(args.command)
+    if handler is None:
         parser.error(f"Unsupported command: {args.command}")
+        return int(ExitCode.FAILURE)
+    try:
+        return int(handler(app, args))
     except CintelError as exc:
         print(f"cintel: {exc}", file=sys.stderr)
-        return 2
-    return 2
+        return int(ExitCode.FAILURE)
+
+
+def _run_init(app, args) -> int:
+    result = app.initialization.initialize(
+        args.repository_path,
+        app.storage_factory,
+        args.output_directory,
+    )
+    print(render_initialization(result, args.json))
+    return ExitCode.SUCCESS
+
+
+def _run_doctor(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    report = app.doctor.inspect(config)
+    print(render_doctor(report, args.json))
+    return _diagnostics_exit_code(report.diagnostics)
+
+
+def _run_scan(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    result = app.scanning.scan(config)
+    print(render_scan(result, args.json))
+    return _diagnostics_exit_code(result.scan.diagnostics)
+
+
+def _run_recovery(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    configuration = _create_build_configuration(app, config, args)
+    if args.command == "setup" and args.input_file is None:
+        result = app.recovery.setup(config, configuration)
+    elif args.command == "instructions":
+        result = app.recovery.instructions(config, configuration)
+    else:
+        result = app.recovery.resume(
+            config,
+            configuration,
+            args.input_file,
+            InputArtifactType(args.input_type),
+        )
+    print(render_recovery(result, args.json))
+    return (
+        ExitCode.FAILURE
+        if result.status is WorkflowStatus.INTERRUPTED
+        else ExitCode.SUCCESS
+    )
+
+
+def _run_build(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    if args.build_command == "discover":
+        return _run_build_discover(app, config, args)
+    if args.build_command == "units":
+        units = app.build_discovery.list_units(config, args.build_config)
+        print(render_compilation_units(units, args.json))
+        return ExitCode.SUCCESS
+    if args.build_command == "show":
+        units = app.build_discovery.show_source(
+            config, args.source_file, args.build_config
+        )
+        print(render_compilation_units(units, args.json))
+        return ExitCode.SUCCESS if units else ExitCode.NO_MATCH
+    return ExitCode.FAILURE
+
+
+def _run_build_discover(app, config, args) -> int:
+    configuration = _create_build_configuration(app, config, args)
+    if args.input_file is not None:
+        recovery = app.recovery.resume(
+            config,
+            configuration,
+            args.input_file,
+            InputArtifactType.MAKE_DRY_RUN,
+        )
+        if recovery.build_result is None:
+            print(render_recovery(recovery, args.json))
+            return ExitCode.FAILURE
+        print(render_build_discovery(recovery.build_result, args.json))
+        return ExitCode.SUCCESS
+    preview = app.build_discovery.preview(configuration)
+    interactive = not args.non_interactive and sys.stdin.isatty()
+    if args.verbose or interactive:
+        print(
+            "Make evaluation command: "
+            + _redacted_command_preview(
+                preview, configuration.environment_overrides
+            ),
+            file=sys.stderr,
+        )
+        print(
+            "Warning: make -n may evaluate $(shell ...) expressions.",
+            file=sys.stderr,
+        )
+    if interactive:
+        answer = input("Proceed with Makefile evaluation? [y/N] ")
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("Build discovery cancelled.", file=sys.stderr)
+            return ExitCode.FAILURE
+    result = app.build_discovery.discover(
+        config, configuration, force=args.force_build_discovery
+    )
+    print(render_build_discovery(result, args.json))
+    return _diagnostics_exit_code(result.diagnostics)
+
+
+_HANDLERS = {
+    "init": _run_init,
+    "doctor": _run_doctor,
+    "scan": _run_scan,
+    "setup": _run_recovery,
+    "instructions": _run_recovery,
+    "resume": _run_recovery,
+    "build": _run_build,
+}
+
+
+def _diagnostics_exit_code(diagnostics) -> ExitCode:
+    has_error = any(item.severity.value == "error" for item in diagnostics)
+    return ExitCode.FAILURE if has_error else ExitCode.SUCCESS
 
 
 def _resolve_config(

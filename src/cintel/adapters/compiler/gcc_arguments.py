@@ -4,7 +4,12 @@ import re
 import shlex
 from pathlib import Path
 
-from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity, Recoverability
+from cintel.domain.diagnostics import (
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+    Recoverability,
+)
 from cintel.domain.models import (
     CompilerArgumentSet,
     CompilerInvocation,
@@ -162,7 +167,7 @@ def _parse_arguments(
     def missing(flag: str) -> None:
         diagnostics.append(
             Diagnostic(
-                code="CI-COMP-002",
+                code=DiagnosticCode.COMPILER_OPTION_MISSING_VALUE,
                 severity=DiagnosticSeverity.WARNING,
                 message=f"Compiler option {flag} is missing its value.",
                 technical_details="The original argument list was preserved.",

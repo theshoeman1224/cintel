@@ -4,12 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
 from cintel.domain.models import GeneratedReportMetadata, RepositoryScan
 from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.services import ReportRenderer, RepositoryDiscoveryProvider
 from cintel.ports.storage import AnalysisStorage
 from cintel.utilities.hashing import sha256_text, stable_id
+from cintel.utilities.paths import stable_repository_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,16 +38,14 @@ class RepositoryScanService:
 
     def scan(self, config: AppConfig) -> ScanWorkflowResult:
         root = Path(config.repository_root)
-        repository_id = stable_id("repository", str(root.resolve(strict=False)))
+        repository_id = stable_repository_id(root)
         if not root.is_dir():
             result = self._discovery.discover(
                 str(root), repository_id, config.exclusion_patterns
             )
             return ScanWorkflowResult(result, None, None)
 
-        storage = self._storage_factory(Path(config.database_path))
-        try:
-            storage.initialize()
+        with storage_session(self._storage_factory, config.database_path) as storage:
             previous = storage.list_repository_files(repository_id)
             result = self._discovery.discover(
                 str(root),
@@ -90,5 +90,3 @@ class RepositoryScanService:
                 markdown_report=str(markdown_path.resolve()),
                 json_report=str(json_path.resolve()),
             )
-        finally:
-            storage.close()

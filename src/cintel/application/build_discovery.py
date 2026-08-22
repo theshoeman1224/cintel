@@ -15,7 +15,9 @@ from cintel.domain.models import (
 from cintel.ports.services import BuildDiscoveryProvider
 from cintel.ports.storage import AnalysisStorage
 from cintel.application.scanning import RepositoryScanService
+from cintel.application.storage_session import storage_session
 from cintel.utilities.hashing import stable_fingerprint, stable_id
+from cintel.utilities.paths import stable_repository_id
 
 
 class BuildDiscoveryService:
@@ -53,11 +55,9 @@ class BuildDiscoveryService:
                 f"Make working directory does not exist: {workdir}"
             )
         selected_makefile = _resolve_makefile(makefile, workdir)
-        repository_id = stable_id("repository", str(root))
+        repository_id = stable_repository_id(root)
 
-        storage = self._storage_factory(Path(app_config.database_path))
-        try:
-            storage.initialize()
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
             build_inputs = tuple(
                 sorted(
                     (item.relative_path, item.content_sha256)
@@ -65,8 +65,6 @@ class BuildDiscoveryService:
                     if item.kind in {FileKind.MAKEFILE, FileKind.MAKE_FRAGMENT}
                 )
             )
-        finally:
-            storage.close()
 
         identity = stable_fingerprint(
             {
@@ -101,17 +99,13 @@ class BuildDiscoveryService:
         self, app_config: AppConfig, configuration: BuildConfiguration, force: bool = False
     ) -> BuildDiscoveryResult:
         input_fingerprint = self._provider.input_fingerprint(configuration)
-        storage = self._storage_factory(Path(app_config.database_path))
-        try:
-            storage.initialize()
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
             if not force:
                 cached = storage.get_cached_build_discovery(input_fingerprint)
                 if cached is not None:
                     return replace(cached, from_cache=True)
             result = self._provider.discover(configuration)
             return self._complete_and_save(storage, result)
-        finally:
-            storage.close()
 
     def discover_saved(
         self,
@@ -120,17 +114,13 @@ class BuildDiscoveryService:
         raw_output: str,
         artifact_hash: str,
     ) -> BuildDiscoveryResult:
-        storage = self._storage_factory(Path(app_config.database_path))
-        try:
-            storage.initialize()
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
             result = self._provider.discover_from_output(
                 configuration,
                 raw_output,
                 artifact_hash=artifact_hash,
             )
             return self._complete_and_save(storage, result)
-        finally:
-            storage.close()
 
     def _complete_and_save(
         self, storage: AnalysisStorage, result: BuildDiscoveryResult
@@ -162,17 +152,11 @@ class BuildDiscoveryService:
     def list_units(
         self, app_config: AppConfig, build_configuration_name: str | None = None
     ) -> tuple[CompilationUnit, ...]:
-        repository_id = stable_id(
-            "repository", str(Path(app_config.repository_root).resolve())
-        )
-        storage = self._storage_factory(Path(app_config.database_path))
-        try:
-            storage.initialize()
+        repository_id = stable_repository_id(app_config.repository_root)
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
             return storage.list_compilation_units(
                 repository_id, build_configuration_name
             )
-        finally:
-            storage.close()
 
     def show_source(
         self,

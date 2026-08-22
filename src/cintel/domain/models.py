@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 from pathlib import Path
-from typing import Any
 
 from cintel.domain.diagnostics import Diagnostic
 
@@ -94,6 +93,11 @@ class CommandRisk(StrEnum):
     READ_ONLY = "read_only"
     MAKEFILE_EVALUATION = "makefile_evaluation"
     MUTATING = "mutating"
+
+
+class ProcessExitCode(IntEnum):
+    COMMAND_NOT_FOUND = 127
+    TIMED_OUT = 124
 
 
 class OutputDestination(StrEnum):
@@ -226,11 +230,26 @@ class CompilationUnit:
     fingerprint: str
 
 
+class CommandClassification(StrEnum):
+    COMPILER = "compiler"
+    DIRECTORY_CHANGE = "directory_change"
+    UNPARSED = "unparsed"
+    RECURSIVE_MAKE = "recursive_make"
+    OTHER = "other"
+
+
+class WorkflowStage(StrEnum):
+    REPOSITORY_SCAN = "repository_scan"
+    GUIDED_RECOVERY = "guided_recovery"
+    INPUT_VALIDATION = "input_validation"
+    BUILD_DISCOVERY = "build_discovery"
+
+
 @dataclass(frozen=True, slots=True)
 class RawBuildCommand:
     raw_content: str
     working_directory: str
-    classification: str
+    classification: CommandClassification
     parse_diagnostic: Diagnostic | None = None
 
 
@@ -377,15 +396,6 @@ class AnalysisCapability:
 
 
 @dataclass(frozen=True, slots=True)
-class AnalysisResult:
-    repository_id: str
-    capabilities: tuple[AnalysisCapability, ...]
-    diagnostics: tuple[Diagnostic, ...]
-    completed_stages: tuple[str, ...]
-    interrupted_stage: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class InputArtifact:
     id: str
     repository_id: str
@@ -499,5 +509,3 @@ class DoctorReport:
     diagnostics: tuple[Diagnostic, ...]
     recommended_actions: tuple[str, ...]
 
-
-JsonValue = str | int | float | bool | None | list[Any] | dict[str, Any]
