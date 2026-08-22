@@ -21,9 +21,12 @@ Python 3.11 or newer is required. No runtime dependencies are required.
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e .
+python scripts/install.py
 cintel --help
 ```
+
+The installer compares the project version with the active environment and
+skips `pip install -e .` when that version is already installed.
 
 Tests use the standard library:
 
