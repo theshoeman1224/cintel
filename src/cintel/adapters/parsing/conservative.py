@@ -16,14 +16,17 @@ from cintel.domain.diagnostics import (
     Recoverability,
 )
 from cintel.domain.models import (
+    CallRelationship,
     CompilationUnit,
     EvidenceKind,
     FileKind,
     FunctionSymbol,
+    GlobalUsageRelationship,
     IncludeRelationship,
     Linkage,
     MacroSymbol,
     RelationshipEvidence,
+    RelationshipResolution,
     RepositoryFile,
     SourceAnalysisResult,
     SourceAnalysisStatus,
@@ -49,6 +52,8 @@ _FUNCTION_DECLARATION_CONFIDENCE = 0.85
 _TAGGED_TYPE_CONFIDENCE = 0.9
 _TYPEDEF_CONFIDENCE = 0.85
 _VARIABLE_CONFIDENCE = 0.8
+_CALL_CANDIDATE_CONFIDENCE = 0.7
+_GLOBAL_USAGE_CONFIDENCE = 0.6
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +178,21 @@ class _Locations:
 class ConservativeCSourceParser:
     """Extracts high-confidence surface syntax without claiming C semantics."""
 
+    @property
+    def parser_name(self) -> str:
+        return PARSER_NAME
+
+    @property
+    def parser_version(self) -> str:
+        return PARSER_VERSION
+
+    def analysis_fingerprint(
+        self,
+        repository_file: RepositoryFile,
+        compilation_unit: CompilationUnit | None,
+    ) -> str:
+        return _AnalysisScope.build(repository_file, compilation_unit).fingerprint
+
     def parse(
         self, repository_file: RepositoryFile, compilation_unit: CompilationUnit | None
     ) -> SourceAnalysisResult:
@@ -215,6 +235,7 @@ class ConservativeCSourceParser:
 
         symbols: list[SourceSymbol] = []
         relationships: list[SourceRelationship] = []
+        function_bodies: list[tuple[FunctionSymbol, int, str]] = []
         preprocessor_symbols, preprocessor_relationships, preprocessor_diagnostics = (
             _parse_directives(
                 directives,
@@ -247,6 +268,28 @@ class ConservativeCSourceParser:
             )
             symbols.extend(construct_symbols)
             diagnostics.extend(construct_diagnostics)
+            if construct.kind == "function" and construct_symbols:
+                first = construct_symbols[0]
+                if isinstance(first, FunctionSymbol) and first.is_definition:
+                    body_start = (construct.header_end or construct.start) + 1
+                    function_bodies.append(
+                        (
+                            first,
+                            body_start,
+                            blanked[body_start : construct.end - 1],
+                        )
+                    )
+
+        if function_bodies:
+            variable_names = _unique_variable_ids(symbols)
+            body_relationships = _extract_body_references(
+                tuple(function_bodies),
+                variable_names,
+                repository_file,
+                compilation_unit,
+                locations,
+            )
+            relationships.extend(body_relationships)
 
         status = (
             SourceAnalysisStatus.DEGRADED
@@ -265,6 +308,117 @@ def _blank_directive_regions(masked: str, directives: tuple[_Directive, ...]) ->
             if code[index] not in {"\n", "\r"}:
                 code[index] = " "
     return "".join(code)
+
+
+_BODY_TOKEN = rf"({_IDENTIFIER})"
+_MEMBER_ACCESS_SUFFIXES = (".", "->")
+
+
+def _unique_variable_ids(symbols: list[SourceSymbol]) -> dict[str, str | None]:
+    ids_by_name: dict[str, set[str]] = {}
+    for symbol in symbols:
+        if isinstance(symbol, VariableSymbol):
+            ids_by_name.setdefault(symbol.name, set()).add(symbol.id)
+    return {
+        name: next(iter(ids)) if len(ids) == 1 else None
+        for name, ids in ids_by_name.items()
+    }
+
+
+def _is_member_access(body: str, start: int) -> bool:
+    if start == 0:
+        return False
+    if body[start - 1] == ".":
+        return True
+    return start >= 2 and body[start - 2 : start] == "->"
+
+
+def _extract_body_references(
+    bodies: tuple[tuple[FunctionSymbol, int, str], ...],
+    variable_names: dict[str, str | None],
+    repository_file: RepositoryFile,
+    compilation_unit: CompilationUnit | None,
+    locations: _Locations,
+) -> list[SourceRelationship]:
+    scope = compilation_unit.id if compilation_unit else "unconfigured"
+    relationships: list[SourceRelationship] = []
+    for function, base_offset, body in bodies:
+        used_variables: set[str] = set()
+        for token in re.finditer(_BODY_TOKEN, body):
+            name = token.group(1)
+            absolute_start = base_offset + token.start(1)
+            location = locations.location(
+                absolute_start, absolute_start + len(name)
+            )
+            remainder = body[token.end() :].lstrip()
+            is_call_candidate = (
+                name not in _CONTROL_NAMES
+                and remainder.startswith("(")
+                and not _is_member_access(body, token.start(1))
+            )
+            if is_call_candidate:
+                relationships.append(
+                    CallRelationship(
+                        id=stable_id(
+                            "call",
+                            repository_file.id,
+                            scope,
+                            function.id,
+                            name,
+                            str(absolute_start),
+                        ),
+                        caller_id=function.id,
+                        callee_id=None,
+                        callee_spelling=name,
+                        resolution=RelationshipResolution.UNRESOLVED,
+                        confidence=_CALL_CANDIDATE_CONFIDENCE,
+                        evidence=(
+                            RelationshipEvidence(
+                                kind=EvidenceKind.HEURISTIC_RESULT,
+                                description=(
+                                    "Conservative direct-call candidate from a "
+                                    "function body."
+                                ),
+                                location=location,
+                                provenance=PARSER_NAME,
+                            ),
+                        ),
+                    )
+                )
+            if (
+                name in variable_names
+                and name not in _CONTROL_NAMES
+                and name not in used_variables
+            ):
+                used_variables.add(name)
+                relationships.append(
+                    GlobalUsageRelationship(
+                        id=stable_id(
+                            "global-usage",
+                            repository_file.id,
+                            scope,
+                            function.id,
+                            name,
+                            str(absolute_start),
+                        ),
+                        function_id=function.id,
+                        variable_id=variable_names[name],
+                        variable_spelling=name,
+                        confidence=_GLOBAL_USAGE_CONFIDENCE,
+                        evidence=(
+                            RelationshipEvidence(
+                                kind=EvidenceKind.HEURISTIC_RESULT,
+                                description=(
+                                    "Conservative file-scope variable usage inside "
+                                    "a function body."
+                                ),
+                                location=location,
+                                provenance=PARSER_NAME,
+                            ),
+                        ),
+                    )
+                )
+    return relationships
 
 
 def _construct_outputs(

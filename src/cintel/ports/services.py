@@ -59,6 +59,18 @@ class CompilerProvider(Protocol):
 
 
 class SourceParser(Protocol):
+    @property
+    def parser_name(self) -> str: ...
+
+    @property
+    def parser_version(self) -> str: ...
+
+    def analysis_fingerprint(
+        self,
+        repository_file: RepositoryFile,
+        compilation_unit: CompilationUnit | None,
+    ) -> str: ...
+
     def parse(
         self, repository_file: RepositoryFile, compilation_unit: CompilationUnit | None
     ) -> SourceAnalysisResult: ...

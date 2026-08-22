@@ -570,6 +570,15 @@ class SQLiteAnalysisStorage:
         )
         connection.commit()
 
+    def list_source_analyses(
+        self, repository_id: str
+    ) -> tuple[SourceAnalysisResult, ...]:
+        rows = self._connect().execute(
+            "SELECT id, payload FROM source_analysis_runs WHERE repository_id = ?",
+            (repository_id,),
+        ).fetchall()
+        return tuple(self._load_source_analysis(row[0], row[1]) for row in rows)
+
     def list_source_analyses_for_file(
         self, repository_file_id: str
     ) -> tuple[SourceAnalysisResult, ...]:

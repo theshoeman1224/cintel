@@ -11,6 +11,7 @@ from cintel.adapters.compiler import (
     GCCCompilerMetadataProvider,
 )
 from cintel.adapters.guidance import StandardInputGuidanceProvider
+from cintel.adapters.parsing import ConservativeCSourceParser
 from cintel.adapters.reports import (
     JSONReportRenderer,
     MarkdownGuidanceRenderer,
@@ -25,6 +26,7 @@ from cintel.application import (
     GuidedRecoveryService,
     RepositoryScanService,
 )
+from cintel.application.analysis import SourceAnalysisService
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +36,7 @@ class Application:
     scanning: RepositoryScanService
     build_discovery: BuildDiscoveryService
     recovery: GuidedRecoveryService
+    analysis: SourceAnalysisService
     ai_provider: DisabledAIProvider
     storage_factory: Callable[[Path], SQLiteAnalysisStorage]
 
@@ -69,6 +72,11 @@ def create_application() -> Application:
             guidance_provider=StandardInputGuidanceProvider(),
             guidance_renderer=MarkdownGuidanceRenderer(),
             artifact_writer=FileSystemArtifactWriter(),
+            storage_factory=SQLiteAnalysisStorage,
+        ),
+        analysis=SourceAnalysisService(
+            parser=ConservativeCSourceParser(),
+            scanner=scanner,
             storage_factory=SQLiteAnalysisStorage,
         ),
         ai_provider=DisabledAIProvider(),

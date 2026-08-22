@@ -3,13 +3,15 @@
 Legacy C Code Intelligence (`cintel`) is an offline-first command-line
 application for turning legacy C repositories into structured, build-aware
 knowledge for developers and coding agents. The current codebase implements
-the Phase 1 foundation through Phase 4 guided recovery, plus the Phase 5A
-source-parser and persistence foundation: initialization,
-environment diagnostics, recursive C/build-input discovery, incremental
-SHA-256 hashing, GNU Make dry-run build discovery, compiler-command
-normalization, validated input artifacts, resumable workflow state, SQLite
-state, conservative per-file C symbol/include extraction, deterministic
-Markdown/JSON inventory reports, configuration, and dependency composition.
+the Phase 1 foundation through Phase 4 guided recovery, the Phase 5A
+source-parser and persistence foundation, and the Phase 5B source-analysis
+workflow: initialization, environment diagnostics, recursive C/build-input
+discovery, incremental SHA-256 hashing, GNU Make dry-run build discovery,
+compiler-command normalization, validated input artifacts, resumable
+workflow state, SQLite state, conservative per-file C symbol/include/call
+extraction with deterministic cross-file resolution, incremental `cintel
+analyze`, deterministic Markdown/JSON inventory reports, configuration, and
+dependency composition.
 
 It does not send source code externally. AI is disabled by default, and the
 deterministic analysis architecture does not depend on an AI model.
@@ -71,9 +73,27 @@ cintel --repository ./example analyze
 cintel --repository ./example report
 ```
 
-`scan`, guided recovery, and the three `build` subcommands are implemented. Source analysis and
-general reports in the example above are planned behavior and are deliberately
-not exposed as successful no-ops.
+`scan`, guided recovery, the three `build` subcommands, and `analyze` are
+implemented. General reports in the example above are planned behavior and
+are deliberately not exposed as successful no-ops.
+
+## Source analysis
+
+`cintel analyze` runs the conservative parser over scanned C sources and
+headers, then resolves relationships deterministically:
+
+- direct-call candidates extracted from function bodies resolve to a
+  same-file static definition first, then to a single repository-wide
+  definition; ambiguous targets stay explicitly unresolved;
+- includes resolve against the including file's directory plus the selected
+  build configuration's `-I` paths;
+- entry-point reachability and direct-recursion cycles derive from the
+  resolved call graph;
+- unchanged files are reused by source hash, compilation-unit fingerprint,
+  and parser version; `--force-analysis` reparses everything.
+
+Without a build configuration, every file is analyzed file-scoped, so
+analysis works when Make evidence is unavailable.
 
 ## Guided recovery and saved inputs
 
@@ -219,10 +239,10 @@ rejected explicitly.
 ## Known MVP limitations
 
 The Phase 1 foundation, Phase 2 repository inventory, Phase 3 Make build
-discovery, Phase 4 guided recovery, and Phase 5A conservative parser/persistence
-foundation are implemented. Cross-file relationship resolution, an analysis
-workflow, broader reports, context packages, and GCC enrichment belong to
-subsequent vertical slices.
+discovery, Phase 4 guided recovery, the Phase 5A conservative
+parser/persistence foundation, and the Phase 5B source-analysis workflow
+(`cintel analyze`) are implemented. Query commands, broader reports, context
+packages, and GCC enrichment belong to subsequent vertical slices.
 
 Even after those slices, conservative analysis will have known limitations:
 
