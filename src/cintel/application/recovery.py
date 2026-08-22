@@ -17,6 +17,7 @@ from cintel.application.recovery_policy import (
     stale_artifact_diagnostic,
 )
 from cintel.application.scanning import RepositoryScanService
+from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
 from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
@@ -36,6 +37,7 @@ from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.services import InputArtifactProvider, InputGuidanceProvider, ReportRenderer
 from cintel.ports.storage import AnalysisStorage
 from cintel.utilities.hashing import stable_id
+from cintel.utilities.paths import stable_repository_id
 from cintel.utilities.secrets import redact_assignment_arguments
 
 
@@ -185,9 +187,7 @@ class GuidedRecoveryService:
         report_path = Path(app_config.output_directory) / "REQUIRED_INPUTS.md"
         content = self._guidance_renderer.render("required_inputs", instructions)
         self._artifact_writer.write_text(report_path, content)
-        repository_id = stable_id(
-            "repository", str(Path(app_config.repository_root).resolve())
-        )
+        repository_id = stable_repository_id(app_config.repository_root)
         with self._storage(app_config) as storage:
             storage.save_report_metadata(
                 GeneratedReportMetadata(
@@ -221,12 +221,8 @@ class GuidedRecoveryService:
 
     @contextmanager
     def _storage(self, app_config: AppConfig) -> Iterator[AnalysisStorage]:
-        storage = self._storage_factory(Path(app_config.database_path))
-        storage.initialize()
-        try:
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
             yield storage
-        finally:
-            storage.close()
 
     @staticmethod
     def _stored_evidence(

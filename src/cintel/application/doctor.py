@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 import os
 import shutil
 import sys
@@ -21,6 +20,7 @@ from cintel.domain.models import (
     ToolStatus,
 )
 from cintel.ports.commands import CommandRunner
+from cintel.utilities.paths import is_excluded
 
 
 class DoctorService:
@@ -238,9 +238,11 @@ class DoctorService:
             names[:] = [
                 name
                 for name in names
-                if not _excluded(relative_dir / name, exclusions)
+                if not is_excluded(relative_dir / name, exclusions)
             ]
             for filename in files:
+                if is_excluded(relative_dir / filename, exclusions):
+                    continue
                 relative = (relative_dir / filename).as_posix()
                 lower = filename.lower()
                 if filename in {"Makefile", "makefile", "GNUmakefile"} or filename.endswith(".mk"):
@@ -261,14 +263,6 @@ def _directory_can_be_written(path: Path) -> bool:
     while not candidate.exists() and candidate != candidate.parent:
         candidate = candidate.parent
     return candidate.is_dir() and os.access(candidate, os.W_OK | os.X_OK)
-
-
-def _excluded(relative: Path, patterns: tuple[str, ...]) -> bool:
-    value = relative.as_posix()
-    return any(
-        fnmatch.fnmatch(relative.name, pattern) or fnmatch.fnmatch(value, pattern)
-        for pattern in patterns
-    )
 
 
 def _cross_gcc_candidates() -> tuple[tuple[str, str], ...]:

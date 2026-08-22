@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 from cintel.domain.diagnostics import Diagnostic
 
@@ -377,15 +376,6 @@ class AnalysisCapability:
 
 
 @dataclass(frozen=True, slots=True)
-class AnalysisResult:
-    repository_id: str
-    capabilities: tuple[AnalysisCapability, ...]
-    diagnostics: tuple[Diagnostic, ...]
-    completed_stages: tuple[str, ...]
-    interrupted_stage: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class InputArtifact:
     id: str
     repository_id: str
@@ -499,5 +489,3 @@ class DoctorReport:
     diagnostics: tuple[Diagnostic, ...]
     recommended_actions: tuple[str, ...]
 
-
-JsonValue = str | int | float | bool | None | list[Any] | dict[str, Any]

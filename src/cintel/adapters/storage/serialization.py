@@ -203,6 +203,24 @@ def diagnostic_from_dict(data: dict) -> Diagnostic:
     )
 
 
+def diagnostic_to_dict(diagnostic: Diagnostic) -> dict:
+    return {
+        "technical_details": diagnostic.technical_details,
+        "missing_capability": diagnostic.missing_capability,
+        "recoverability": diagnostic.recoverability.value,
+        "suggested_actions": diagnostic.suggested_actions,
+        "related_paths": diagnostic.related_paths,
+        "related_commands": tuple(
+            {
+                "arguments": command.arguments,
+                "working_directory": command.working_directory,
+            }
+            for command in diagnostic.related_commands
+        ),
+        "metadata": diagnostic.metadata,
+    }
+
+
 def _compiler_invocation_from_dict(data: dict) -> CompilerInvocation:
     arguments = data["arguments"]
     return CompilerInvocation(

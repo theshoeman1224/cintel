@@ -35,6 +35,7 @@ from cintel.adapters.storage.serialization import (
     build_result_from_dict,
     compilation_unit_from_dict,
     diagnostic_from_dict,
+    diagnostic_to_dict,
     input_artifact_from_dict,
     json_default,
     redact_text,
@@ -106,6 +107,7 @@ class SQLiteAnalysisStorage:
             name=row[2],
             created_at=datetime.fromisoformat(row[3]),
         )
+
     def list_repository_files(self, repository_id: str) -> tuple[RepositoryFile, ...]:
         rows = self._connect().execute(
             """
@@ -395,19 +397,9 @@ class SQLiteAnalysisStorage:
     def list_diagnostics(
         self, repository_id: str, context_prefix: str | None = None
     ) -> tuple[Diagnostic, ...]:
-        query = "SELECT code, severity, message, payload FROM diagnostics WHERE repository_id = ?"
-        arguments: list[str] = [repository_id]
-        if context_prefix is not None:
-            query += " AND context_key LIKE ?"
-            arguments.append(f"{context_prefix}%")
-        query += " ORDER BY id"
-        rows = self._connect().execute(query, tuple(arguments)).fetchall()
-        results = []
-        for code, severity, message, payload in rows:
-            data = json.loads(payload)
-            data.update({"code": code, "severity": severity, "message": message})
-            results.append(diagnostic_from_dict(data))
-        return tuple(results)
+        return _read_diagnostics(
+            self._connect(), repository_id, context_prefix=context_prefix
+        )
 
     def save_input_artifact(self, artifact: InputArtifact) -> None:
         self._connect().execute(
@@ -706,24 +698,7 @@ def _replace_diagnostics(
                 item.code,
                 item.severity.value,
                 item.message,
-                json.dumps(
-                    {
-                        "technical_details": item.technical_details,
-                        "missing_capability": item.missing_capability,
-                        "recoverability": item.recoverability.value,
-                        "suggested_actions": item.suggested_actions,
-                        "related_paths": item.related_paths,
-                        "related_commands": tuple(
-                            {
-                                "arguments": command.arguments,
-                                "working_directory": command.working_directory,
-                            }
-                            for command in item.related_commands
-                        ),
-                        "metadata": item.metadata,
-                    },
-                    sort_keys=True,
-                ),
+                json.dumps(diagnostic_to_dict(item), sort_keys=True),
                 context,
             )
             for item in diagnostics
@@ -731,19 +706,35 @@ def _replace_diagnostics(
     )
 
 
-def _load_diagnostics(
-    connection: sqlite3.Connection, repository_id: str, context: str
+def _read_diagnostics(
+    connection: sqlite3.Connection,
+    repository_id: str,
+    *,
+    exact_context: str | None = None,
+    context_prefix: str | None = None,
 ) -> tuple[Diagnostic, ...]:
-    rows = connection.execute(
-        """
-        SELECT code, severity, message, payload FROM diagnostics
-        WHERE repository_id = ? AND context_key = ? ORDER BY id
-        """,
-        (repository_id, context),
-    ).fetchall()
+    query = (
+        "SELECT code, severity, message, payload FROM diagnostics "
+        "WHERE repository_id = ?"
+    )
+    arguments: list[str] = [repository_id]
+    if exact_context is not None:
+        query += " AND context_key = ?"
+        arguments.append(exact_context)
+    elif context_prefix is not None:
+        query += " AND context_key LIKE ?"
+        arguments.append(f"{context_prefix}%")
+    query += " ORDER BY id"
+    rows = connection.execute(query, tuple(arguments)).fetchall()
     results = []
     for code, severity, message, payload in rows:
         data = json.loads(payload)
         data.update({"code": code, "severity": severity, "message": message})
         results.append(diagnostic_from_dict(data))
     return tuple(results)
+
+
+def _load_diagnostics(
+    connection: sqlite3.Connection, repository_id: str, context: str
+) -> tuple[Diagnostic, ...]:
+    return _read_diagnostics(connection, repository_id, exact_context=context)

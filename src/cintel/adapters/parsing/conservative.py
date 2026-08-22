@@ -41,6 +41,14 @@ _IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
 _CONTROL_NAMES = {"if", "for", "while", "switch", "return", "sizeof", "_Alignof"}
 _STORAGE_WORDS = {"extern", "static", "inline", "_Noreturn", "register", "auto"}
 
+_EXACT_CONFIDENCE = 1.0
+_MACRO_HEURISTIC_CONFIDENCE = 0.8
+_FUNCTION_DEFINITION_CONFIDENCE = 0.9
+_FUNCTION_DECLARATION_CONFIDENCE = 0.85
+_TAGGED_TYPE_CONFIDENCE = 0.9
+_TYPEDEF_CONFIDENCE = 0.85
+_VARIABLE_CONFIDENCE = 0.8
+
 
 @dataclass(frozen=True, slots=True)
 class _Directive:
@@ -58,12 +66,82 @@ class _Construct:
 
 
 @dataclass(frozen=True, slots=True)
+class _ConstructIssue:
+    message: str
+    start: int
+    end: int
+
+
+@dataclass(frozen=True, slots=True)
 class _FunctionHeader:
     name: str
     name_offset: int
     return_type: str
     parameters: tuple[str, ...]
     linkage: Linkage
+
+
+@dataclass(frozen=True, slots=True)
+class _AnalysisScope:
+    """Values shared by every result produced for one parse invocation."""
+
+    repository_file: RepositoryFile
+    compilation_unit_id: str | None
+    scope_id: str
+    fingerprint: str
+    analyzed_at: datetime
+
+    @classmethod
+    def build(
+        cls,
+        repository_file: RepositoryFile,
+        compilation_unit: CompilationUnit | None,
+    ) -> _AnalysisScope:
+        return cls(
+            repository_file=repository_file,
+            compilation_unit_id=(
+                compilation_unit.id if compilation_unit else None
+            ),
+            scope_id=stable_id(
+                "source-analysis",
+                repository_file.id,
+                compilation_unit.id if compilation_unit else "unconfigured",
+            ),
+            fingerprint=stable_fingerprint(
+                {
+                    "source_hash": repository_file.content_sha256,
+                    "compilation_unit": (
+                        compilation_unit.fingerprint if compilation_unit else None
+                    ),
+                    "parser": PARSER_NAME,
+                    "parser_version": PARSER_VERSION,
+                }
+            ),
+            analyzed_at=datetime.now(timezone.utc),
+        )
+
+    def result(
+        self,
+        status: SourceAnalysisStatus,
+        symbols: tuple[SourceSymbol, ...] = (),
+        relationships: tuple[SourceRelationship, ...] = (),
+        diagnostics: tuple[Diagnostic, ...] = (),
+    ) -> SourceAnalysisResult:
+        return SourceAnalysisResult(
+            id=self.scope_id,
+            repository_id=self.repository_file.repository_id,
+            repository_file_id=self.repository_file.id,
+            compilation_unit_id=self.compilation_unit_id,
+            source_hash=self.repository_file.content_sha256,
+            analysis_fingerprint=self.fingerprint,
+            parser_name=PARSER_NAME,
+            parser_version=PARSER_VERSION,
+            status=status,
+            symbols=tuple(_deduplicate_symbols(list(symbols))),
+            relationships=tuple(_deduplicate_relationships(list(relationships))),
+            diagnostics=tuple(_deduplicate_diagnostics(list(diagnostics))),
+            analyzed_at=self.analyzed_at,
+        )
 
 
 class _Locations:
@@ -97,39 +175,16 @@ class ConservativeCSourceParser:
     def parse(
         self, repository_file: RepositoryFile, compilation_unit: CompilationUnit | None
     ) -> SourceAnalysisResult:
-        scope_id = stable_id(
-            "source-analysis",
-            repository_file.id,
-            compilation_unit.id if compilation_unit else "unconfigured",
-        )
-        fingerprint = stable_fingerprint(
-            {
-                "source_hash": repository_file.content_sha256,
-                "compilation_unit": compilation_unit.fingerprint if compilation_unit else None,
-                "parser": PARSER_NAME,
-                "parser_version": PARSER_VERSION,
-            }
-        )
-        analyzed_at = datetime.now(timezone.utc)
+        scope = _AnalysisScope.build(repository_file, compilation_unit)
         if repository_file.kind not in {FileKind.C_SOURCE, FileKind.C_HEADER}:
-            diagnostic = _diagnostic(
-                "Only C source and header files are supported by this parser.",
-                repository_file,
-            )
-            return SourceAnalysisResult(
-                id=scope_id,
-                repository_id=repository_file.repository_id,
-                repository_file_id=repository_file.id,
-                compilation_unit_id=compilation_unit.id if compilation_unit else None,
-                source_hash=repository_file.content_sha256,
-                analysis_fingerprint=fingerprint,
-                parser_name=PARSER_NAME,
-                parser_version=PARSER_VERSION,
-                status=SourceAnalysisStatus.FAILED,
-                symbols=(),
-                relationships=(),
-                diagnostics=(diagnostic,),
-                analyzed_at=analyzed_at,
+            return scope.result(
+                SourceAnalysisStatus.FAILED,
+                diagnostics=(
+                    _diagnostic(
+                        "Only C source and header files are supported by this parser.",
+                        repository_file,
+                    ),
+                ),
             )
 
         try:
@@ -137,25 +192,15 @@ class ConservativeCSourceParser:
                 encoding="utf-8", errors="replace"
             )
         except OSError as error:
-            diagnostic = _diagnostic(
-                "The source file could not be read.",
-                repository_file,
-                technical_details=str(error),
-            )
-            return SourceAnalysisResult(
-                id=scope_id,
-                repository_id=repository_file.repository_id,
-                repository_file_id=repository_file.id,
-                compilation_unit_id=compilation_unit.id if compilation_unit else None,
-                source_hash=repository_file.content_sha256,
-                analysis_fingerprint=fingerprint,
-                parser_name=PARSER_NAME,
-                parser_version=PARSER_VERSION,
-                status=SourceAnalysisStatus.FAILED,
-                symbols=(),
-                relationships=(),
-                diagnostics=(diagnostic,),
-                analyzed_at=analyzed_at,
+            return scope.result(
+                SourceAnalysisStatus.FAILED,
+                diagnostics=(
+                    _diagnostic(
+                        "The source file could not be read.",
+                        repository_file,
+                        technical_details=str(error),
+                    ),
+                ),
             )
 
         locations = _Locations(source, repository_file.relative_path)
@@ -165,11 +210,7 @@ class ConservativeCSourceParser:
             for issue in masked_result.issues
         ]
         directives = _directives(source, masked_result.text)
-        code = list(masked_result.text)
-        for directive in directives:
-            for index in range(directive.start, directive.end):
-                if code[index] not in {"\n", "\r"}:
-                    code[index] = " "
+        blanked = _blank_directive_regions(masked_result.text, directives)
 
         symbols: list[SourceSymbol] = []
         relationships: list[SourceRelationship] = []
@@ -185,120 +226,139 @@ class ConservativeCSourceParser:
         relationships.extend(preprocessor_relationships)
         diagnostics.extend(preprocessor_diagnostics)
 
-        constructs, construct_issues = _top_level_constructs("".join(code))
+        constructs, construct_issues = _top_level_constructs(blanked)
         diagnostics.extend(
             _diagnostic(
-                message,
+                issue.message,
                 repository_file,
-                location=locations.location(start, end),
+                location=locations.location(issue.start, issue.end),
             )
-            for message, start, end in construct_issues
+            for issue in construct_issues
         )
         for construct in constructs:
-            text = source[construct.start : construct.end]
-            masked_text = "".join(code[construct.start : construct.end])
-            if construct.kind == "function":
-                header_end = construct.header_end or construct.end
-                header_text = source[construct.start:header_end]
-                masked_header = "".join(code[construct.start:header_end])
-                header = _function_header(masked_header)
-                if header is None:
-                    diagnostics.append(
-                        _diagnostic(
-                            "A function-like definition could not be parsed conservatively.",
-                            repository_file,
-                            location=locations.location(construct.start, header_end),
-                        )
-                    )
-                    continue
-                symbols.append(
-                    _function_symbol(
-                        header,
-                        repository_file,
-                        compilation_unit,
-                        locations,
-                        construct.start,
-                        construct.end,
-                        is_definition=True,
-                    )
-                )
-                diagnostics.extend(
-                    _parameter_diagnostics(
-                        header, repository_file, locations, construct.start, header_end
-                    )
-                )
-                continue
-
-            declaration = masked_text.rstrip()
-            if declaration.endswith(";"):
-                declaration = declaration[:-1].rstrip()
-            function = _function_header(declaration)
-            if function is not None:
-                symbols.append(
-                    _function_symbol(
-                        function,
-                        repository_file,
-                        compilation_unit,
-                        locations,
-                        construct.start,
-                        construct.end,
-                        is_definition=False,
-                    )
-                )
-                diagnostics.extend(
-                    _parameter_diagnostics(
-                        function,
-                        repository_file,
-                        locations,
-                        construct.start,
-                        construct.end,
-                    )
-                )
-                continue
-
-            type_symbols, type_diagnostics = _type_symbols(
-                text,
-                masked_text,
-                construct.start,
+            construct_symbols, construct_diagnostics = _construct_outputs(
+                construct,
+                source,
+                blanked,
                 repository_file,
                 compilation_unit,
                 locations,
             )
-            symbols.extend(type_symbols)
-            diagnostics.extend(type_diagnostics)
-            variable, variable_diagnostic = _variable_symbol(
-                text,
-                masked_text,
-                construct.start,
-                repository_file,
-                compilation_unit,
-                locations,
-            )
-            if variable is not None:
-                symbols.append(variable)
-            if variable_diagnostic is not None:
-                diagnostics.append(variable_diagnostic)
+            symbols.extend(construct_symbols)
+            diagnostics.extend(construct_diagnostics)
 
         status = (
             SourceAnalysisStatus.DEGRADED
             if diagnostics
             else SourceAnalysisStatus.COMPLETED
         )
-        return SourceAnalysisResult(
-            id=scope_id,
-            repository_id=repository_file.repository_id,
-            repository_file_id=repository_file.id,
-            compilation_unit_id=compilation_unit.id if compilation_unit else None,
-            source_hash=repository_file.content_sha256,
-            analysis_fingerprint=fingerprint,
-            parser_name=PARSER_NAME,
-            parser_version=PARSER_VERSION,
-            status=status,
-            symbols=tuple(_deduplicate_symbols(symbols)),
-            relationships=tuple(_deduplicate_relationships(relationships)),
-            diagnostics=tuple(_deduplicate_diagnostics(diagnostics)),
-            analyzed_at=analyzed_at,
+        return scope.result(
+            status, tuple(symbols), tuple(relationships), tuple(diagnostics)
         )
+
+
+def _blank_directive_regions(masked: str, directives: tuple[_Directive, ...]) -> str:
+    code = list(masked)
+    for directive in directives:
+        for index in range(directive.start, directive.end):
+            if code[index] not in {"\n", "\r"}:
+                code[index] = " "
+    return "".join(code)
+
+
+def _construct_outputs(
+    construct: _Construct,
+    source: str,
+    blanked: str,
+    repository_file: RepositoryFile,
+    compilation_unit: CompilationUnit | None,
+    locations: _Locations,
+) -> tuple[list[SourceSymbol], list[Diagnostic]]:
+    text = source[construct.start : construct.end]
+    masked_text = blanked[construct.start : construct.end]
+    symbols: list[SourceSymbol] = []
+    diagnostics: list[Diagnostic] = []
+
+    if construct.kind == "function":
+        header_end = construct.header_end or construct.end
+        header = _function_header(blanked[construct.start:header_end])
+        if header is None:
+            diagnostics.append(
+                _diagnostic(
+                    "A function-like definition could not be parsed conservatively.",
+                    repository_file,
+                    location=locations.location(construct.start, header_end),
+                )
+            )
+            return symbols, diagnostics
+        symbols.append(
+            _function_symbol(
+                header,
+                repository_file,
+                compilation_unit,
+                locations,
+                construct.start,
+                construct.end,
+                is_definition=True,
+            )
+        )
+        diagnostics.extend(
+            _parameter_diagnostics(
+                header, repository_file, locations, construct.start, header_end
+            )
+        )
+        return symbols, diagnostics
+
+    declaration = masked_text.rstrip()
+    if declaration.endswith(";"):
+        declaration = declaration[:-1].rstrip()
+    function = _function_header(declaration)
+    if function is not None:
+        symbols.append(
+            _function_symbol(
+                function,
+                repository_file,
+                compilation_unit,
+                locations,
+                construct.start,
+                construct.end,
+                is_definition=False,
+            )
+        )
+        diagnostics.extend(
+            _parameter_diagnostics(
+                function,
+                repository_file,
+                locations,
+                construct.start,
+                construct.end,
+            )
+        )
+        return symbols, diagnostics
+
+    type_symbols, type_diagnostics = _type_symbols(
+        text,
+        masked_text,
+        construct.start,
+        repository_file,
+        compilation_unit,
+        locations,
+    )
+    symbols.extend(type_symbols)
+    diagnostics.extend(type_diagnostics)
+    variable, variable_diagnostic = _variable_symbol(
+        text,
+        masked_text,
+        construct.start,
+        repository_file,
+        compilation_unit,
+        locations,
+    )
+    if variable is not None:
+        symbols.append(variable)
+    if variable_diagnostic is not None:
+        diagnostics.append(variable_diagnostic)
+    return symbols, diagnostics
 
 
 def _directives(source: str, masked: str) -> tuple[_Directive, ...]:
@@ -403,7 +463,11 @@ def _parse_directives(
                     name=name,
                     location=location,
                     replacement=replacement,
-                    confidence=0.8 if evidence_kind is EvidenceKind.HEURISTIC_RESULT else 1.0,
+                    confidence=(
+                        _MACRO_HEURISTIC_CONFIDENCE
+                        if evidence_kind is EvidenceKind.HEURISTIC_RESULT
+                        else _EXACT_CONFIDENCE
+                    ),
                     is_function_like=function_like,
                     parameters=parameters,
                     evidence=(
@@ -439,9 +503,9 @@ def _parse_directives(
 
 def _top_level_constructs(
     source: str,
-) -> tuple[tuple[_Construct, ...], tuple[tuple[str, int, int], ...]]:
+) -> tuple[tuple[_Construct, ...], tuple[_ConstructIssue, ...]]:
     constructs: list[_Construct] = []
-    issues: list[tuple[str, int, int]] = []
+    issues: list[_ConstructIssue] = []
     segment_start = 0
     brace_depth = 0
     index = 0
@@ -454,7 +518,9 @@ def _top_level_constructs(
                 closing = _matching_brace(source, index)
                 if closing is None:
                     issues.append(
-                        ("Unmatched function body brace.", index, len(source))
+                        _ConstructIssue(
+                            "Unmatched function body brace.", index, len(source)
+                        )
                     )
                     break
                 constructs.append(
@@ -474,7 +540,7 @@ def _top_level_constructs(
         elif character == "}" and brace_depth > 0:
             brace_depth -= 1
         elif character == "}" and brace_depth == 0:
-            issues.append(("Unmatched closing brace.", index, index + 1))
+            issues.append(_ConstructIssue("Unmatched closing brace.", index, index + 1))
             segment_start = index + 1
         elif character == ";" and brace_depth == 0:
             start = _first_nonspace(source, segment_start, index + 1)
@@ -485,12 +551,18 @@ def _top_level_constructs(
             segment_start = index + 1
         index += 1
     if brace_depth:
-        issues.append(("Unmatched top-level brace.", segment_start, len(source)))
+        issues.append(
+            _ConstructIssue("Unmatched top-level brace.", segment_start, len(source))
+        )
     trailing = source[segment_start:].strip()
     if trailing:
         start = _first_nonspace(source, segment_start, len(source))
         issues.append(
-            ("Unterminated or unsupported top-level declaration.", start, len(source))
+            _ConstructIssue(
+                "Unterminated or unsupported top-level declaration.",
+                start,
+                len(source),
+            )
         )
     return tuple(constructs), tuple(issues)
 
@@ -563,22 +635,15 @@ def _matching_open_parenthesis(value: str, closing: int) -> int | None:
 def _split_parameters(value: str) -> tuple[str, ...] | None:
     if not value.strip():
         return ()
+    depths = _BracketDepths()
     results: list[str] = []
     start = 0
-    depths = {"(": 0, "[": 0, "{": 0}
-    pairs = {")": "(", "]": "[", "}": "{"}
     for index, character in enumerate(value):
-        if character in depths:
-            depths[character] += 1
-        elif character in pairs:
-            opener = pairs[character]
-            depths[opener] -= 1
-            if depths[opener] < 0:
-                return None
-        elif character == "," and not any(depths.values()):
+        depths.feed(character)
+        if character == "," and not depths.nested:
             results.append(_normalize_space(value[start:index]))
             start = index + 1
-    if any(depths.values()):
+    if not depths.balanced:
         return None
     results.append(_normalize_space(value[start:]))
     return tuple(item for item in results if item)
@@ -611,7 +676,11 @@ def _function_symbol(
         linkage=header.linkage,
         return_type=header.return_type,
         parameters=header.parameters,
-        confidence=0.9 if is_definition else 0.85,
+        confidence=(
+            _FUNCTION_DEFINITION_CONFIDENCE
+            if is_definition
+            else _FUNCTION_DECLARATION_CONFIDENCE
+        ),
         evidence=(
             RelationshipEvidence(
                 kind=EvidenceKind.HEURISTIC_RESULT,
@@ -672,17 +741,13 @@ def _type_symbols(
     tag_match = re.match(
         rf"\s*(?:(typedef)\s+)?(struct|union|enum)\s+({_IDENTIFIER})", masked
     )
-    tag_matches = ()
-    if tag_match is not None:
-        tail = masked[tag_match.end() :]
-        if tag_match.group(1) is None or re.match(r"\s*\{", tail):
-            tag_matches = (tag_match,)
-    for match in tag_matches:
-        kind, name = match.group(2), match.group(3)
-        tail = masked[match.end() :]
-        definition = bool(re.match(r"\s*\{", tail))
+    if tag_match is not None and (
+        tag_match.group(1) is None or re.match(r"\s*\{", masked[tag_match.end() :])
+    ):
+        kind, name = tag_match.group(2), tag_match.group(3)
+        definition = bool(re.match(r"\s*\{", masked[tag_match.end() :]))
         location = locations.location(
-            base_offset + match.start(), base_offset + match.end()
+            base_offset + tag_match.start(), base_offset + tag_match.end()
         )
         symbols.append(
             TypeSymbol(
@@ -692,13 +757,13 @@ def _type_symbols(
                     scope,
                     kind,
                     name,
-                    str(base_offset + match.start()),
+                    str(base_offset + tag_match.start()),
                 ),
                 name=name,
                 type_kind=kind,
                 location=location,
                 is_definition=definition,
-                confidence=0.9,
+                confidence=_TAGGED_TYPE_CONFIDENCE,
                 evidence=(
                     RelationshipEvidence(
                         kind=EvidenceKind.HEURISTIC_RESULT,
@@ -748,7 +813,7 @@ def _type_symbols(
             type_kind="typedef",
             location=location,
             is_definition=True,
-            confidence=0.85,
+            confidence=_TYPEDEF_CONFIDENCE,
             underlying_type=underlying or None,
             evidence=(
                 RelationshipEvidence(
@@ -832,7 +897,7 @@ def _variable_symbol(
             type_spelling=type_spelling,
             linkage=linkage,
             is_definition=is_definition,
-            confidence=0.8,
+            confidence=_VARIABLE_CONFIDENCE,
             evidence=(
                 RelationshipEvidence(
                     kind=EvidenceKind.HEURISTIC_RESULT,
@@ -847,29 +912,55 @@ def _variable_symbol(
 
 
 def _before_top_level_assignment(value: str) -> str:
-    depths = {"(": 0, "[": 0, "{": 0}
-    pairs = {")": "(", "]": "[", "}": "{"}
+    depths = _BracketDepths()
     for index, character in enumerate(value):
-        if character in depths:
-            depths[character] += 1
-        elif character in pairs and depths[pairs[character]] > 0:
-            depths[pairs[character]] -= 1
-        elif character == "=" and not any(depths.values()):
+        depths.feed(character)
+        if character == "=" and not depths.nested:
             return value[:index].rstrip()
     return value
 
 
 def _top_level_contains(value: str, target: str) -> bool:
-    depths = {"(": 0, "[": 0, "{": 0}
-    pairs = {")": "(", "]": "[", "}": "{"}
+    depths = _BracketDepths()
     for character in value:
-        if character in depths:
-            depths[character] += 1
-        elif character in pairs and depths[pairs[character]] > 0:
-            depths[pairs[character]] -= 1
-        elif character == target and not any(depths.values()):
+        depths.feed(character)
+        if character == target and not depths.nested:
             return True
     return False
+
+
+class _BracketDepths:
+    """Tracks (), [], {} nesting while scanning one declaration.
+
+    ``nested`` reports whether any bracket is currently open. ``balanced``
+    additionally requires that no closer ever appeared without a matching
+    opener and that nothing was left open. Callers that tolerate stray
+    closers simply ignore ``balanced``.
+    """
+
+    __slots__ = ("_depths", "_unbalanced")
+
+    def __init__(self) -> None:
+        self._depths = {"(": 0, "[": 0, "{": 0}
+        self._unbalanced = False
+
+    def feed(self, character: str) -> None:
+        if character in self._depths:
+            self._depths[character] += 1
+        elif character in {")", "]", "}"}:
+            opener = {")": "(", "]": "[", "}": "{"}[character]
+            if self._depths[opener]:
+                self._depths[opener] -= 1
+            else:
+                self._unbalanced = True
+
+    @property
+    def nested(self) -> bool:
+        return any(self._depths.values())
+
+    @property
+    def balanced(self) -> bool:
+        return not self._unbalanced and not self.nested
 
 
 def _without_storage(value: str) -> str:

@@ -68,9 +68,11 @@ class MarkdownReportRenderer:
                 "",
                 "## Build-awareness status",
                 "",
-                "Build-target membership, per-file compiler flags, conditional "
-                "compilation, and exact include resolution are unavailable until "
-                "Make discovery is performed. *(unavailable information)*",
+                "This report reflects repository scanning only and does not "
+                "include persisted build discoveries. Run `cintel build "
+                "discover` for build-target membership, per-file compiler "
+                "flags, and exact compiler arguments. *(unavailable "
+                "information)*",
                 "",
             )
         )

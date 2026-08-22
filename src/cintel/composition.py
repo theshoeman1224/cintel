@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
 
 from cintel.adapters.ai import DisabledAIProvider
 from cintel.adapters.artifacts import FileSystemArtifactWriter, FileSystemInputArtifactProvider
@@ -33,7 +35,7 @@ class Application:
     build_discovery: BuildDiscoveryService
     recovery: GuidedRecoveryService
     ai_provider: DisabledAIProvider
-    storage_factory: type[SQLiteAnalysisStorage]
+    storage_factory: Callable[[Path], SQLiteAnalysisStorage]
 
 
 def create_application() -> Application:
