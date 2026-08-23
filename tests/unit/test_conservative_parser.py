@@ -6,11 +6,14 @@ from pathlib import Path
 
 from cintel.adapters.parsing import ConservativeCSourceParser, mask_c_non_code
 from cintel.domain.models import (
+    CallRelationship,
     FileKind,
     FunctionSymbol,
+    GlobalUsageRelationship,
     IncludeRelationship,
     Linkage,
     MacroSymbol,
+    RelationshipResolution,
     RepositoryFile,
     SourceAnalysisStatus,
     TypeSymbol,
@@ -197,6 +200,71 @@ class ConservativeCSourceParserTests(unittest.TestCase):
             for diagnostic in result.diagnostics:
                 result_path = diagnostic.related_paths[0]
                 self.assertTrue(Path(result_path).is_absolute())
+
+    def test_extracts_call_candidates_and_global_usage_from_function_bodies(self) -> None:
+        source = (
+            "int g_counter;\n"
+            "static int helper(int value) { return value + 1; }\n"
+            "int run(int input)\n"
+            "{\n"
+            "    if (input > 0) { return helper(input); }\n"
+            "    while (g_counter < 3) { g_counter = helper(g_counter); }\n"
+            "    return sizeof(int);\n"
+            "}\n"
+        )
+        with self._parse(source) as result:
+            functions = {
+                item.name: item
+                for item in result.symbols
+                if isinstance(item, FunctionSymbol)
+            }
+            calls = [
+                item
+                for item in result.relationships
+                if isinstance(item, CallRelationship)
+            ]
+            usages = [
+                item
+                for item in result.relationships
+                if isinstance(item, GlobalUsageRelationship)
+            ]
+
+            self.assertEqual(
+                RelationshipResolution.UNRESOLVED,
+                calls[0].resolution,
+            )
+            callees = {item.callee_spelling for item in calls}
+            self.assertIn("helper", callees)
+            self.assertNotIn("if", callees)
+            self.assertNotIn("while", callees)
+            self.assertNotIn("sizeof", callees)
+            self.assertNotIn("return", callees)
+            function_ids = {item.id for item in functions.values()}
+            for call in calls:
+                self.assertIn(call.caller_id, function_ids)
+                self.assertIsNotNone(call.evidence)
+            self.assertEqual({"g_counter"}, {item.variable_spelling for item in usages})
+            run_id = next(
+                item.id
+                for item in result.symbols
+                if isinstance(item, FunctionSymbol) and item.name == "run"
+            )
+            for usage in usages:
+                self.assertEqual(run_id, usage.function_id)
+                self.assertIsNotNone(usage.variable_id)
+
+    def test_member_access_is_not_a_direct_call_candidate(self) -> None:
+        source = (
+            "struct config { int (*apply)(int); };\n"
+            "void drive(struct config *config) { config->apply(1); }\n"
+        )
+        with self._parse(source) as result:
+            calls = [
+                item
+                for item in result.relationships
+                if isinstance(item, CallRelationship)
+            ]
+            self.assertEqual([], [item for item in calls if item.callee_spelling == "apply"])
 
     def _parse(self, source: str, suffix: str = ".c", file_id: str = "file-sample"):
         return _ParsedSource(source, suffix, file_id)

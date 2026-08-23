@@ -9,6 +9,7 @@ from typing import Sequence
 
 from cintel.application import parse_assignments, parse_path_placeholders
 from cintel.cli.presentation import (
+    render_analysis,
     render_build_discovery,
     render_compilation_units,
     render_doctor,
@@ -78,6 +79,10 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("setup", help="Assess missing inputs and create recovery instructions")
     subcommands.add_parser("instructions", help="Regenerate REQUIRED_INPUTS.md")
     subcommands.add_parser("resume", help="Validate supplied evidence and resume analysis")
+    analyze = subcommands.add_parser(
+        "analyze", help="Run conservative source analysis over scanned files"
+    )
+    analyze.add_argument("--force-analysis", action="store_true")
     build = subcommands.add_parser("build", help="Discover and inspect selected builds")
     build_commands = build.add_subparsers(dest="build_command", required=True)
     build_commands.add_parser("discover", help="Run and parse a GNU Make dry-run")
@@ -151,6 +156,17 @@ def _run_recovery(app, args) -> int:
     )
 
 
+def _run_analyze(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    summary = app.analysis.analyze(
+        config,
+        build_configuration_name=args.build_config,
+        force=args.force_analysis,
+    )
+    print(render_analysis(summary, args.json))
+    return _diagnostics_exit_code(summary.diagnostics)
+
+
 def _run_build(app, args) -> int:
     config = _resolve_config(args.config, args.repository, args.output_directory)
     if args.build_command == "discover":
@@ -216,6 +232,7 @@ _HANDLERS = {
     "setup": _run_recovery,
     "instructions": _run_recovery,
     "resume": _run_recovery,
+    "analyze": _run_analyze,
     "build": _run_build,
 }
 

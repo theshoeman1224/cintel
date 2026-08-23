@@ -1,9 +1,10 @@
 # Legacy C Code Intelligence: Current Capabilities and MVP Roadmap
 
-- Audit date: 2026-08-10
-- Audited base revision: `83294e9` (`main`)
-- Implemented vertical slices: Phases 1–4 and Phase 5A foundation
-- Recommended next vertical slice: Phase 5B, source-analysis workflow and resolution
+- Audit date: 2026-08-10, re-verified 2026-08-22
+- Audited base revision: `83294e9` (`main`); Phase 5B landed on `main`
+- Implemented vertical slices: Phases 1–4, Phase 5A foundation, and the
+  Phase 5B source-analysis workflow and resolution
+- Recommended next vertical slice: Phase 6, reports, queries, and context
 
 ## Executive summary
 
@@ -14,14 +15,23 @@ output, normalize GCC-style compilation commands, persist the results in
 SQLite, and guide a user through supplying missing build evidence.
 
 Phase 5A adds a conservative parser that extracts includes, macros, function
-definitions and declarations, basic named types, typedefs, and file-scope
-variables. Schema version 5 stores those symbols, include relationships,
+definitions and declarations, basic named types, typedefs, file-scope
+variables, direct-call candidates from function bodies, and same-file
+variable usages. Schema version 5 stores those symbols, include relationships,
 parser diagnostics, and per-file or per-compilation-unit analysis state.
 
-The next phase should implement the source-analysis application workflow,
-cross-file linking, and direct-call extraction. Phase 6 can then turn that index into the
-developer-facing symbol, relationship, and context reports required for the
-MVP. Optional GCC enrichment remains Phase 7.
+Phase 5B adds `cintel analyze`: an application service that parses scanned
+files and build-aware compilation units with incremental reuse by source
+hash, compilation-unit fingerprint, and parser version. It resolves direct
+calls deterministically (same-file static definitions first, then a single
+repository-wide definition; ambiguous targets stay unresolved), resolves
+includes against source directories and compilation-unit `-I` paths, and
+derives entry-point reachability plus direct-recursion cycles from the call
+graph.
+
+The next phase should turn that index into the developer-facing symbol,
+relationship, and context reports required for the MVP. Optional GCC
+enrichment remains Phase 7.
 
 ## Verification baseline
 
@@ -33,11 +43,11 @@ PYTHONPATH=src python3 -m cintel --help
 PYTHONPATH=src python3 -m cintel build --help
 ```
 
-Result (re-verified 2026-08-22 after completing the Phase 0-5 cleanup effort
-in `docs/REFACTOR_PLAN.md`):
+Result (re-verified 2026-08-22 after Phase 5B):
 
-- 102 tests passed: 90 unit and 12 integration, including the live complex
-  fixture build and validation.
+- 110 tests passed: 98 unit and 12 integration, including the live complex
+  fixture build, the cleanup-effort safety nets, and the new analysis
+  workflow tests.
 - New safety-net suites cover the guided-recovery service against fake ports,
   CLI presentation renderers, serialization round trips for all symbol and
   relationship kinds, schema migrations from v2/v3/v4 snapshots, the
@@ -68,13 +78,13 @@ or `PYTHONPATH=src` when run directly from a fresh checkout.
 | Area | Status | Current implementation |
 |---|---|---|
 | Domain models | Implemented for current and planned MVP concepts | Immutable dataclasses and enums cover repositories, files, builds, compiler invocations, symbols, relationships, capabilities, diagnostics, artifacts, workflow state, commands, and context packages. |
-| Application services | Implemented for Phases 1–4 | Initialization, doctor, scanning, Make discovery, and guided recovery are orchestrated outside the CLI. |
+| Application services | Implemented for Phases 1–5B | Initialization, doctor, scanning, Make discovery, guided recovery, and source analysis are orchestrated outside the CLI. |
 | Ports | Implemented | Protocols exist for command execution, build discovery, compiler behavior, source parsing, storage, report rendering, guidance, artifacts, and AI. |
 | Command adapter | Implemented | Standard-library subprocess execution uses argument lists, `shell=False`, explicit working directories, environment overrides, timeout, output destination, and risk metadata. |
 | Make adapter | Implemented | GNU Make command creation, dry-run capture/import, directory tracking, command splitting, and compiler-command discovery are isolated here. |
 | Compiler adapters | Partially implemented | GCC-style argument parsing and compiler version lookup exist. General GCC capability probing and enrichment do not. |
 | Repository adapter | Implemented | Filesystem discovery, exclusions, hashing, metadata, and incremental hash reuse exist. |
-| Source parser adapter | Phase 5A implemented | The conservative parser implements offset-preserving masking and basic extraction behind `SourceParser`; application orchestration and cross-file resolution remain. |
+| Source parser adapter | Phase 5A/5B implemented | The conservative parser implements offset-preserving masking plus symbol, call-candidate, and variable-usage extraction behind `SourceParser`; `SourceAnalysisService` orchestrates it with incremental reuse and deterministic resolution. |
 | SQLite adapter | Implemented through Phase 5A | Schema version 5 adds source-analysis runs, symbols, relationships, and context-scoped parser diagnostics to the Phase 1–4 state. `list_build_configurations` is a reserved port surface until Phase 6 query workflows need it. |
 | Report adapters | Partially implemented | Markdown and JSON repository inventory plus Markdown recovery instructions exist. Build, symbol, graph, diagnostics, capability, and context report families are incomplete. |
 | AI adapter | Implemented as disabled | The deterministic core does not depend on AI. Requests to generate AI content fail explicitly. |
@@ -296,9 +306,10 @@ The codebase currently emits stable codes in these families:
 - `CI-BUILD-001` through `CI-BUILD-005`;
 - `CI-COMP-001` and `CI-COMP-002`; and
 - `CI-INPUT-001` through `CI-INPUT-003`; and
-- `CI-PARSE-001`.
+- `CI-PARSE-001`; and
+- `CI-ANLZ-001`.
 
-These identifiers are defined once as the `DiagnosticCode` enumeration in
+All identifiers are defined once as the `DiagnosticCode` enumeration in
 `cintel.domain.diagnostics`; the string values are the public contract.
 Command classifications (`compiler`, `directory_change`, `unparsed`,
 `recursive_make`, `other`) are likewise defined as `CommandClassification`,
@@ -314,16 +325,15 @@ Report-generation diagnostics such as `CI-GEN-001` remain to be introduced.
 
 ### Functional gaps
 
-- No source-analysis workflow or `cintel analyze` command exists.
-- Parser results are not yet populated through an application service or CLI.
-- Includes are extracted but unresolved; direct calls are not extracted.
-- Declaration-to-definition, type-usage, and global-usage relationships are
-  not built.
-- Entry-point reachability and direct-recursion cycle analysis do not exist.
-- `cintel symbols`, `show function`, `callers`, `callees`,
-  `context function`, and `report` do not exist.
-- There are no Markdown/JSON build-unit, function, include, call,
-  diagnostics, capability, graph, or context reports.
+- `cintel analyze` exists, but there are no symbol/relationship query
+  commands or generated reports yet (Phase 6).
+- Includes resolve against source directories and unit `-I` paths; system
+  headers and absent generated headers stay explicitly unresolved.
+- Declaration-to-definition linkage manifests through resolved call targets;
+  a dedicated declaration-link relationship kind does not exist.
+- Type-usage relationships are not extracted (global variable usage is).
+- Reachability is computed over direct calls only; indirect dispatch through
+  function pointers remains uncertain by design.
 - GCC dependency, preprocessing, macro, and dump capability probing is not
   implemented.
 - Validated build logs, file lists, dependency files, preprocessed files, and
@@ -358,62 +368,50 @@ and 5. The remaining items below still stand.
 These are documentation/report integration issues or later-phase gaps; they do
 not invalidate the passing Phase 1–5A test baseline.
 
-## Recommended next phase: Phase 5B, Analysis workflow and resolution
+## Recommended next phase: Phase 6, Reports, queries, and context
 
 ### Phase boundary
 
-Phase 5B should orchestrate the Phase 5A parser and persistence foundation over
-scanned files and discovered compilation units. It should add deterministic
-cross-file relationships and incremental reuse, while leaving rich reports and
-context packaging for Phase 6.
+Phase 5B is implemented: `cintel analyze` orchestrates the Phase 5A parser
+and persistence foundation over scanned files and discovered compilation
+units, resolves cross-file relationships deterministically, and reuses
+analysis incrementally. Phase 6 turns that stored index into developer-facing
+output; context packaging and rich report families belong there.
 
-### Proposed implementation
+### What Phase 5B delivered against its plan
 
-1. Add a source-analysis application service that selects repository files and
-   build-aware compilation units without embedding parser logic.
-2. Add `cintel analyze` as the Phase 5 workflow entry point.
-3. Wire the parser and service in the composition root.
-4. Extract conservative direct-call candidates from function bodies.
-5. Resolve same-file static targets before unique external definitions and
-   retain ambiguous targets as unresolved.
-6. Link declarations to definitions without collapsing file-scoped symbols.
-7. Resolve include relationships using source directories and compilation-unit
-   include paths where possible.
-8. Add practical type/global usage relationships, entry-point reachability,
-   and direct-recursion cycle detection.
-9. Reuse analysis by source hash, compilation-unit fingerprint, and parser
-   version so changed inputs invalidate only dependent results.
-10. Keep analysis useful without Make by creating file-scoped,
-    reduced-capability analysis records.
+1. `SourceAnalysisService` selects repository files and build-aware
+   compilation units without embedding parser logic.
+2. `cintel analyze` is the Phase 5 workflow entry point (`--build-config`,
+   `--force-analysis`, `--json`).
+3. The parser and service are wired in the composition root.
+4. The parser extracts conservative direct-call candidates from function
+   bodies (control keywords and member-access dispatch excluded) plus
+   same-file variable usages.
+5. Calls resolve to a same-file static definition first, then to a single
+   repository-wide definition; ambiguous targets stay unresolved.
+6. Declaration-to-definition linkage manifests through resolved call targets;
+   file-scoped symbols are never collapsed.
+7. Includes resolve using the including file's directory and compilation-unit
+   `-I` paths where possible.
+8. Entry-point reachability and direct-recursion cycles derive from the
+   resolved call graph; global-usage relationships cover same-file variables
+   (type usage remains future work).
+9. Analysis reuse keys on source hash, compilation-unit fingerprint, and
+   parser version; changed inputs reparse only their own results.
+10. Without Make evidence, every file is analyzed file-scoped so analysis
+    stays useful in reduced mode.
 
-### Phase 5B acceptance criteria
-
-Phase 5B should not be considered complete until:
-
-- all Phase 1–5A tests continue to pass;
-- configured and unconfigured analysis workflows are integration-tested;
-- declaration-to-definition and direct-call resolution is deterministic;
-- recursive direct-call cycles and entry-point reachability are calculated;
-- unchanged analysis is reused and source or compiler-argument changes mark
-  dependent results stale;
-- analysis succeeds in reduced mode without Make or GCC; and
-- the complex fixture verifies its mandatory function, direct-call, include,
-  type, macro, and global findings while classifying callback and
-  macro-generated behavior as uncertain.
+Integration tests cover configured and unconfigured runs, incremental reuse,
+and forced reanalysis on the repository fixtures.
 
 ## Work remaining to create the MVP
 
 ### Phase 5B: Source-analysis workflow and relationships
 
-Required:
-
-- direct calls;
-- declaration/definition linking;
-- include resolution plus call, practical type-use, and global-use relationships;
-- entry-point reachability;
-- recursive direct-call cycles;
-- configuration membership;
-- incremental/resumable source analysis.
+Implemented (see above). Deferred detail: extending the complex fixture's
+validator with mandatory analysis findings belongs to the Phase 6 report work
+so the fixture gains machine-readable expectations alongside the new reports.
 
 ### Phase 6: Reports, queries, and context
 

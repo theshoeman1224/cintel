@@ -243,6 +243,7 @@ class WorkflowStage(StrEnum):
     GUIDED_RECOVERY = "guided_recovery"
     INPUT_VALIDATION = "input_validation"
     BUILD_DISCOVERY = "build_discovery"
+    SOURCE_ANALYSIS = "source_analysis"
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,6 +386,26 @@ class SourceAnalysisResult:
     relationships: tuple[SourceRelationship, ...]
     diagnostics: tuple[Diagnostic, ...]
     analyzed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisRunSummary:
+    repository_id: str
+    build_configuration_name: str | None
+    files_selected: int
+    units_selected: int
+    reused_results: int
+    stored_results: int
+    failed_results: int
+    resolved_calls: int
+    unresolved_calls: int
+    resolved_includes: int
+    entry_points: int
+    unreachable_definitions: int
+    recursive_functions: tuple[str, ...]
+    status: WorkflowStatus
+    capabilities: tuple[AnalysisCapability, ...]
+    diagnostics: tuple[Diagnostic, ...]
 
 
 @dataclass(frozen=True, slots=True)

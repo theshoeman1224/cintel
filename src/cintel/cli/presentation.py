@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from cintel.application.analysis import AnalysisRunSummary
 from cintel.application.initialization import InitializationResult
 from cintel.application.scanning import ScanWorkflowResult
 from cintel.domain.models import DoctorReport, RecoveryResult
@@ -146,6 +147,28 @@ def render_compilation_units(
                 f"  Working directory: {invocation.working_directory}",
                 f"  Arguments: {shlex.join(invocation.raw_arguments)}",
             )
+        )
+    return "\n".join(lines)
+
+
+def render_analysis(result: AnalysisRunSummary, as_json: bool = False) -> str:
+    if as_json:
+        return _json(result)
+    lines = [
+        f"Source analysis: {result.status.value}",
+        f"Targets: {result.files_selected} ({result.units_selected} build-configured)",
+        f"Results: {result.stored_results} parsed, {result.reused_results} reused, "
+        f"{result.failed_results} failed",
+        f"Calls: {result.resolved_calls} resolved, {result.unresolved_calls} unresolved",
+        f"Includes resolved: {result.resolved_includes}",
+        f"Entry points: {result.entry_points}; "
+        f"unreachable definitions: {result.unreachable_definitions}",
+        "Directly recursive: "
+        + (", ".join(result.recursive_functions) if result.recursive_functions else "none"),
+    ]
+    for diagnostic in result.diagnostics:
+        lines.append(
+            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
         )
     return "\n".join(lines)
 
