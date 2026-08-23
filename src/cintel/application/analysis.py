@@ -381,23 +381,24 @@ def _graph_analytics(
 
 
 def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:
-    if not failed:
-        return ()
-    return (
-        Diagnostic(
-            code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
-            severity=DiagnosticSeverity.WARNING,
-            message=(
-                f"{failed} analyzed targets could not be parsed; "
-                "their findings are unavailable."
+    diagnostics: list[Diagnostic] = []
+    if failed:
+        diagnostics.append(
+            Diagnostic(
+                code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
+                severity=DiagnosticSeverity.WARNING,
+                message=(
+                    f"{failed} analyzed targets could not be parsed; "
+                    "their findings are unavailable."
+                ),
+                missing_capability="complete_source_analysis",
+                recoverability=Recoverability.REDUCED_CAPABILITY,
+                suggested_actions=(
+                    "Inspect the per-file parse diagnostics for the failing targets.",
+                ),
             ),
-            missing_capability="complete_source_analysis",
-            recoverability=Recoverability.REDUCED_CAPABILITY,
-            suggested_actions=(
-                "Inspect the per-file parse diagnostics for the failing targets.",
-            ),
-        ),
-    )
+        )
+    return tuple(diagnostics)
 
 
 def _capabilities(
