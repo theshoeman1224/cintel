@@ -12,6 +12,9 @@ license = {text = "MIT"}
 authors = [{name = "Legacy C Code Intelligence contributors"}]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["coverage[toml]>=7.6"]
+
 [project.scripts]
 cintel = "cintel.cli.main:main"
 
@@ -21,6 +24,14 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.unittest]
-start-directory = "tests"
+[tool.coverage.run]
+source_pkgs = ["cintel"]
+data_file = ".coverage"
+
+[tool.coverage.report]
+show_missing = true
+precision = 1
+
+[tool.coverage.xml]
+output = "coverage.xml"
 

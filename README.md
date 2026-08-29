@@ -36,6 +36,33 @@ Tests use the standard library:
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
+To run them under coverage and produce `coverage.xml` for SonarQube:
+
+```bash
+pip install -e '.[dev]'
+PYTHONPATH=src coverage run -m unittest discover -s tests
+coverage xml
+```
+
+Run `sonar-scanner` afterwards so the report is uploaded with the analysis.
+
+### SonarCloud (PR analysis)
+
+`.github/workflows/sonarcloud.yml` runs the test suite under coverage and
+uploads the result to SonarCloud on every push to `main` and every pull
+request. One-time setup required:
+
+1. In SonarCloud, under **Administration > Analysis Method**, switch the
+   project to **CI-based analysis** (automatic analysis must be disabled
+   when CI-based analysis is active).
+2. Generate a token under **My Account > Security** and add it as the
+   `SONAR_TOKEN` repository secret in GitHub
+   (**Settings > Secrets and variables > Actions**).
+
+The workflow overrides `sonar.projectKey` and `sonar.organization` for
+SonarCloud; the local `sonar-project.properties` keeps the project key used
+by local `sonar-scanner` runs.
+
 ## Quick start
 
 Initialize a repository-local workspace, then inspect the development
