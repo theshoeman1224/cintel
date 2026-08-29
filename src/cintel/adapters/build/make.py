@@ -31,10 +31,10 @@ from cintel.ports.services import CompilerCommandParser, CompilerMetadataProvide
 from cintel.utilities.hashing import stable_fingerprint, stable_id
 
 _ENTERING = re.compile(
-    r"^(?:g?make)(?:\[\d+\])?: Entering directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
+    r"^g?make(?:\[\d+\])?: Entering directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
 )
 _LEAVING = re.compile(
-    r"^(?:g?make)(?:\[\d+\])?: Leaving directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
+    r"^g?make(?:\[\d+\])?: Leaving directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
 )
 
 
@@ -60,9 +60,8 @@ class MakeBuildDiscovery:
         self._compiler_metadata = compiler_metadata
 
     def command_request(self, configuration: BuildConfiguration) -> CommandRequest:
-        arguments = list(make_dry_run_arguments(configuration))
         return CommandRequest(
-            arguments=tuple(arguments),
+            arguments=make_dry_run_arguments(configuration),
             working_directory=configuration.working_directory
             or configuration.repository_root,
             environment_overrides=configuration.environment_overrides,

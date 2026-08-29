@@ -42,6 +42,7 @@ PARSER_NAME = "conservative-c"
 PARSER_VERSION = "1"
 
 _IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_]*"
+_TYPEDEF_PREFIX = "typedef "
 _CONTROL_NAMES = {"if", "for", "while", "switch", "return", "sizeof", "_Alignof"}
 _STORAGE_WORDS = {"extern", "static", "inline", "_Noreturn", "register", "auto"}
 
@@ -742,7 +743,7 @@ def _first_nonspace(source: str, start: int, end: int) -> int:
 
 def _function_header(value: str) -> _FunctionHeader | None:
     text = value.strip()
-    if not text.endswith(")") or "=" in text or text.startswith("typedef "):
+    if not text.endswith(")") or "=" in text or text.startswith(_TYPEDEF_PREFIX):
         return None
     opening = _matching_open_parenthesis(text, len(text) - 1)
     if opening is None:
@@ -931,7 +932,7 @@ def _type_symbols(
         )
 
     stripped = masked.strip().rstrip(";").strip()
-    if not stripped.startswith("typedef "):
+    if not stripped.startswith(_TYPEDEF_PREFIX):
         return symbols, diagnostics
     alias_match = re.search(rf"\(\s*\*\s*({_IDENTIFIER})\s*\)", stripped)
     if alias_match is None:
@@ -952,7 +953,7 @@ def _type_symbols(
         (
             stripped[: alias_match.start(1)]
             + stripped[alias_match.end(1) :]
-        ).removeprefix("typedef ")
+        ).removeprefix(_TYPEDEF_PREFIX)
     )
     symbols.append(
         TypeSymbol(
@@ -994,7 +995,7 @@ def _variable_symbol(
     stripped = masked.strip().rstrip(";").strip()
     if (
         not stripped
-        or stripped.startswith("typedef ")
+        or stripped.startswith(_TYPEDEF_PREFIX)
         or re.fullmatch(rf"(?:struct|union|enum)\s+{_IDENTIFIER}", stripped)
     ):
         return None, None

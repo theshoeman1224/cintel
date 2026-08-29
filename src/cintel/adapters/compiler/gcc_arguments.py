@@ -20,7 +20,7 @@ from cintel.domain.models import (
 from cintel.utilities.hashing import stable_fingerprint, stable_id
 from cintel.utilities.paths import normalized_path, repository_relative
 
-_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$", re.DOTALL)
+_ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=.*$", re.DOTALL)
 _COMPILER = re.compile(r"^(?:[A-Za-z0-9_.+-]+-)?(?:gcc|cc|clang)$")
 _SIMPLE_WRAPPERS = {"ccache", "distcc", "sccache"}
 
