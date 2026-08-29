@@ -612,28 +612,14 @@ def _split_shell_commands(value: str) -> tuple[str, ...]:
     start = 0
     index = 0
     quote: str | None = None
-    escaped = False
     while index < len(value):
         character = value[index]
-        if escaped:
-            escaped = False
-            index += 1
-            continue
-        if character == "\\" and quote != "'":
-            escaped = True
-            index += 1
-            continue
-        if character in {"'", '"'}:
-            if quote is None:
-                quote = character
-            elif quote == character:
-                quote = None
-            index += 1
-            continue
         if quote is None and character == ";":
             parts.append(value[start:index])
             start = index + 1
-        elif (
+            index += 1
+            continue
+        if (
             quote is None
             and character == "&"
             and index + 1 < len(value)
@@ -641,10 +627,26 @@ def _split_shell_commands(value: str) -> tuple[str, ...]:
         ):
             parts.append(value[start:index])
             start = index + 2
-            index += 1
-        index += 1
+            index += 2
+            continue
+        index, quote = _advance_quoted_content(value, index, quote)
     parts.append(value[start:])
     return tuple(parts)
+
+
+def _advance_quoted_content(
+    value: str, index: int, quote: str | None
+) -> tuple[int, str | None]:
+    """Consume one non-separator character, tracking escapes and quote toggles."""
+    character = value[index]
+    if character == "\\" and quote != "'":
+        return index + 2, quote
+    if character in {"'", '"'}:
+        if quote is None:
+            return index + 1, character
+        if quote == character:
+            return index + 1, None
+    return index + 1, quote
 
 
 def _is_cd(tokens: list[str]) -> bool:
