@@ -859,28 +859,30 @@ def _parameter_diagnostics(
     start: int,
     end: int,
 ) -> tuple[Diagnostic, ...]:
+    diagnostics: list[Diagnostic] = []
     if any(parameter == "..." for parameter in header.parameters):
-        return (
+        diagnostics.append(
             _diagnostic(
                 "Variadic function parameters are retained but not interpreted.",
                 repository_file,
                 location=locations.location(start, end),
-            ),
+            )
         )
+        return tuple(diagnostics)
     untyped = [
         parameter
         for parameter in header.parameters
         if re.fullmatch(_IDENTIFIER, parameter)
     ]
     if untyped:
-        return (
+        diagnostics.append(
             _diagnostic(
                 "Old-style or untyped function parameters are ambiguous.",
                 repository_file,
                 location=locations.location(start, end),
-            ),
+            )
         )
-    return ()
+    return tuple(diagnostics)
 
 
 def _type_symbols(

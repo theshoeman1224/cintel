@@ -411,6 +411,22 @@ def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:
     return tuple(diagnostics)
 
 
+def _analysis_status(target_count: int, failed: int) -> CapabilityStatus:
+    if target_count == 0:
+        return CapabilityStatus.UNAVAILABLE
+    if failed:
+        return CapabilityStatus.DEGRADED
+    return CapabilityStatus.AVAILABLE
+
+
+def _call_status(resolved_calls: int, unresolved_calls: int) -> CapabilityStatus:
+    if resolved_calls == 0 and unresolved_calls == 0:
+        return CapabilityStatus.UNAVAILABLE
+    if unresolved_calls == 0:
+        return CapabilityStatus.AVAILABLE
+    return CapabilityStatus.DEGRADED
+
+
 def _capabilities(
     *,
     target_count: int,
@@ -424,20 +440,8 @@ def _capabilities(
     unreachable: int,
     recursive_count: int,
 ) -> tuple[AnalysisCapability, ...]:
-    analysis_status = (
-        CapabilityStatus.UNAVAILABLE
-        if target_count == 0
-        else CapabilityStatus.DEGRADED
-        if failed
-        else CapabilityStatus.AVAILABLE
-    )
-    call_status = (
-        CapabilityStatus.UNAVAILABLE
-        if resolved_calls == 0 and unresolved_calls == 0
-        else CapabilityStatus.AVAILABLE
-        if unresolved_calls == 0
-        else CapabilityStatus.DEGRADED
-    )
+    analysis_status = _analysis_status(target_count, failed)
+    call_status = _call_status(resolved_calls, unresolved_calls)
     graph_status = (
         CapabilityStatus.AVAILABLE
         if definition_graph_exists(entry_points, unreachable, recursive_count)
