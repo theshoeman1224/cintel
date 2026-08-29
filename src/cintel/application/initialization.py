@@ -66,20 +66,9 @@ class InitializationService:
             created.append(str(output))
 
         for name in OUTPUT_DIRECTORIES:
-            path = output / name
-            if path.exists():
-                if not path.is_dir():
-                    raise InitializationError(f"Expected a directory but found a file: {path}")
-                existing.append(str(path))
-            else:
-                path.mkdir()
-                created.append(str(path))
+            _ensure_directory(output / name, created, existing)
 
-        if config_path.exists():
-            existing.append(str(config_path))
-        else:
-            config_path.write_text(desired_config, encoding="utf-8")
-            created.append(str(config_path))
+        _ensure_config_file(config_path, desired_config, created, existing)
 
         repository = Repository(
             id=stable_repository_id(root),
@@ -99,3 +88,23 @@ class InitializationService:
             created_paths=tuple(created),
             existing_paths=tuple(existing),
         )
+
+
+def _ensure_directory(path: Path, created: list[str], existing: list[str]) -> None:
+    if path.exists():
+        if not path.is_dir():
+            raise InitializationError(f"Expected a directory but found a file: {path}")
+        existing.append(str(path))
+    else:
+        path.mkdir()
+        created.append(str(path))
+
+
+def _ensure_config_file(
+    path: Path, desired_config: str, created: list[str], existing: list[str]
+) -> None:
+    if path.exists():
+        existing.append(str(path))
+    else:
+        path.write_text(desired_config, encoding="utf-8")
+        created.append(str(path))

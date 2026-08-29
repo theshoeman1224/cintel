@@ -28,6 +28,8 @@ from cintel.domain.models import (
     RepositoryFile,
     SourceAnalysisResult,
     SourceAnalysisStatus,
+    SourceRelationship,
+    SourceSymbol,
     WorkflowStage,
     WorkflowState,
     WorkflowStatus,
@@ -352,27 +354,61 @@ def _resolve_relationships(
 def _graph_analytics(
     results,
 ) -> tuple[int, int, tuple[str, ...]]:
+    definition_names, adjacency, incoming = _build_call_graph(results)
+    entry_ids = [node for node in definition_names if not incoming[node]]
+    reachable = _reachable_from(entry_ids, adjacency)
+    unreachable = len(set(definition_names) - reachable)
+    recursive = {
+        definition_names[node]
+        for node, targets in adjacency.items()
+        if node in targets
+    }
+    return len(entry_ids), unreachable, tuple(sorted(recursive))
+
+
+def _build_call_graph(
+    results,
+) -> tuple[dict[str, str], dict[str, set[str]], dict[str, set[str]]]:
     definition_names: dict[str, str] = {}
     incoming: dict[str, set[str]] = {}
     adjacency: dict[str, set[str]] = {}
     for result in results:
-        for symbol in result.symbols:
-            if isinstance(symbol, FunctionSymbol) and symbol.is_definition:
-                definition_names[symbol.id] = symbol.name
-                incoming.setdefault(symbol.id, set())
-                adjacency.setdefault(symbol.id, set())
+        _register_definitions(result.symbols, definition_names, adjacency, incoming)
     for result in results:
-        for relationship in result.relationships:
-            if isinstance(relationship, CallRelationship) and isinstance(
-                relationship.callee_id, str
-            ):
-                caller = relationship.caller_id
-                callee = relationship.callee_id
-                if caller in adjacency and callee in incoming:
-                    adjacency[caller].add(callee)
-                    incoming[callee].add(caller)
+        _register_calls(result.relationships, adjacency, incoming)
+    return definition_names, adjacency, incoming
 
-    entry_ids = [node for node in definition_names if not incoming[node]]
+
+def _register_definitions(
+    symbols: tuple[SourceSymbol, ...],
+    definition_names: dict[str, str],
+    adjacency: dict[str, set[str]],
+    incoming: dict[str, set[str]],
+) -> None:
+    for symbol in symbols:
+        if isinstance(symbol, FunctionSymbol) and symbol.is_definition:
+            definition_names[symbol.id] = symbol.name
+            incoming.setdefault(symbol.id, set())
+            adjacency.setdefault(symbol.id, set())
+
+
+def _register_calls(
+    relationships: tuple[SourceRelationship, ...],
+    adjacency: dict[str, set[str]],
+    incoming: dict[str, set[str]],
+) -> None:
+    for relationship in relationships:
+        if isinstance(relationship, CallRelationship) and isinstance(
+            relationship.callee_id, str
+        ):
+            caller = relationship.caller_id
+            callee = relationship.callee_id
+            if caller in adjacency and callee in incoming:
+                adjacency[caller].add(callee)
+                incoming[callee].add(caller)
+
+
+def _reachable_from(entry_ids: list[str], adjacency: dict[str, set[str]]) -> set[str]:
     reachable: set[str] = set()
     pending = list(entry_ids)
     while pending:
@@ -381,13 +417,7 @@ def _graph_analytics(
             continue
         reachable.add(node)
         pending.extend(adjacency[node] - reachable)
-    unreachable = len(set(definition_names) - reachable)
-    recursive = {
-        definition_names[node]
-        for node, targets in adjacency.items()
-        if node in targets
-    }
-    return len(entry_ids), unreachable, tuple(sorted(recursive))
+    return reachable
 
 
 def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:

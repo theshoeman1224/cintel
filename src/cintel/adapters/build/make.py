@@ -49,6 +49,24 @@ class ParsedMakeOutput:
     diagnostics: tuple[Diagnostic, ...]
 
 
+def _enter_directory(match: re.Match[str], directory_stack: list[Path]) -> None:
+    entered = Path(match.group(1))
+    if not entered.is_absolute():
+        entered = directory_stack[-1] / entered
+    directory_stack.append(entered.resolve())
+
+
+def _leave_directory(
+    directory_stack: list[Path], diagnostics: list[Diagnostic], stripped: str
+) -> None:
+    if len(directory_stack) > 1:
+        directory_stack.pop()
+    else:
+        diagnostics.append(
+            _build_parse_diagnostic(stripped, "Make directory stack underflow")
+        )
+
+
 class MakeBuildDiscovery:
     def __init__(
         self,
@@ -219,21 +237,11 @@ class MakeBuildDiscovery:
                 continue
             entering = _ENTERING.match(stripped)
             if entering:
-                entered = Path(entering.group(1))
-                if not entered.is_absolute():
-                    entered = directory_stack[-1] / entered
-                directory_stack.append(entered.resolve())
+                _enter_directory(entering, directory_stack)
                 continue
             leaving = _LEAVING.match(stripped)
             if leaving:
-                if len(directory_stack) > 1:
-                    directory_stack.pop()
-                else:
-                    diagnostics.append(
-                        _build_parse_diagnostic(
-                            stripped, "Make directory stack underflow"
-                        )
-                    )
+                _leave_directory(directory_stack, diagnostics, stripped)
                 continue
             if _is_make_message(stripped):
                 continue
