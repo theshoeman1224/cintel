@@ -44,7 +44,6 @@ class CompilerCommandParser(Protocol):
         working_directory: str,
         repository_root: str,
         build_configuration_id: str,
-        repository_id: str,
     ) -> tuple[CompilerInvocation, ...] | None: ...
 
 

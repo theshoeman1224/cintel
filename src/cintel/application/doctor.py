@@ -122,41 +122,8 @@ class DoctorService:
                 )
             )
 
-        capabilities = (
-            AnalysisCapability(
-                name="repository_initialization",
-                status=CapabilityStatus.AVAILABLE if writable else CapabilityStatus.UNAVAILABLE,
-                reason="Output location is writable." if writable else "Output location is not writable.",
-            ),
-            AnalysisCapability(
-                name="make_build_discovery",
-                status=CapabilityStatus.AVAILABLE if make_available else CapabilityStatus.UNAVAILABLE,
-                reason="GNU Make is available." if make_available else "GNU Make is unavailable.",
-            ),
-            AnalysisCapability(
-                name="gcc_enrichment",
-                status=CapabilityStatus.AVAILABLE if gcc_available else CapabilityStatus.UNAVAILABLE,
-                reason="A GCC executable is available." if gcc_available else "No GCC executable was found.",
-            ),
-            AnalysisCapability(
-                name="offline_deterministic_analysis",
-                status=CapabilityStatus.AVAILABLE,
-                reason="The core uses local files and standard-library adapters only.",
-            ),
-            AnalysisCapability(
-                name="guided_input_recovery",
-                status=CapabilityStatus.AVAILABLE if writable else CapabilityStatus.UNAVAILABLE,
-                reason=(
-                    "Validated artifacts and resumable workflow state can be stored locally."
-                    if writable
-                    else "Guided recovery requires a writable output directory."
-                ),
-            ),
-            AnalysisCapability(
-                name="ai_generation",
-                status=CapabilityStatus.UNAVAILABLE,
-                reason="AI is disabled by default and not implemented in the MVP foundation.",
-            ),
+        capabilities = _doctor_capabilities(
+            writable=writable, make_available=make_available, gcc_available=gcc_available
         )
 
         if not actions:
@@ -246,17 +213,80 @@ class DoctorService:
                     continue
                 relative = (relative_dir / filename).as_posix()
                 lower = filename.lower()
-                if filename in {"Makefile", "makefile", "GNUmakefile"} or filename.endswith(".mk"):
-                    categories["makefiles"].append(relative)
-                if lower.endswith((".log", ".buildlog")):
-                    categories["build_logs"].append(relative)
-                if filename.endswith(".d"):
-                    categories["dependency_files"].append(relative)
-                if filename.endswith(".o"):
-                    categories["object_files"].append(relative)
-                if filename == "compile_commands.json":
-                    categories["compile_databases"].append(relative)
+                for category, predicate in _INPUT_CATEGORY_PREDICATES:
+                    if predicate(filename, lower):
+                        categories[category].append(relative)
         return {name: tuple(sorted(values)) for name, values in categories.items()}
+
+
+def _doctor_capabilities(
+    *, writable: bool, make_available: bool, gcc_available: bool
+) -> tuple[AnalysisCapability, ...]:
+    return (
+        AnalysisCapability(
+            name="repository_initialization",
+            status=CapabilityStatus.AVAILABLE if writable else CapabilityStatus.UNAVAILABLE,
+            reason="Output location is writable." if writable else "Output location is not writable.",
+        ),
+        AnalysisCapability(
+            name="make_build_discovery",
+            status=CapabilityStatus.AVAILABLE if make_available else CapabilityStatus.UNAVAILABLE,
+            reason="GNU Make is available." if make_available else "GNU Make is unavailable.",
+        ),
+        AnalysisCapability(
+            name="gcc_enrichment",
+            status=CapabilityStatus.AVAILABLE if gcc_available else CapabilityStatus.UNAVAILABLE,
+            reason="A GCC executable is available." if gcc_available else "No GCC executable was found.",
+        ),
+        AnalysisCapability(
+            name="offline_deterministic_analysis",
+            status=CapabilityStatus.AVAILABLE,
+            reason="The core uses local files and standard-library adapters only.",
+        ),
+        AnalysisCapability(
+            name="guided_input_recovery",
+            status=CapabilityStatus.AVAILABLE if writable else CapabilityStatus.UNAVAILABLE,
+            reason=(
+                "Validated artifacts and resumable workflow state can be stored locally."
+                if writable
+                else "Guided recovery requires a writable output directory."
+            ),
+        ),
+        AnalysisCapability(
+            name="ai_generation",
+            status=CapabilityStatus.UNAVAILABLE,
+            reason="AI is disabled by default and not implemented in the MVP foundation.",
+        ),
+    )
+
+
+def _is_makefile(filename: str, lower: str) -> bool:
+    return filename in {"Makefile", "makefile", "GNUmakefile"} or filename.endswith(".mk")
+
+
+def _is_build_log(filename: str, lower: str) -> bool:
+    return lower.endswith((".log", ".buildlog"))
+
+
+def _is_dependency_file(filename: str, lower: str) -> bool:
+    return filename.endswith(".d")
+
+
+def _is_object_file(filename: str, lower: str) -> bool:
+    return filename.endswith(".o")
+
+
+def _is_compile_database(filename: str, lower: str) -> bool:
+    return filename == "compile_commands.json"
+
+
+_INPUT_CATEGORY_PREDICATES = (
+    ("makefiles", _is_makefile),
+    ("build_logs", _is_build_log),
+    ("dependency_files", _is_dependency_file),
+    ("object_files", _is_object_file),
+    ("compile_databases", _is_compile_database),
+)
 
 
 def _directory_can_be_written(path: Path) -> bool:

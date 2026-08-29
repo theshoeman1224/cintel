@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,16 +25,17 @@ from cintel.domain.models import (
     CompilationUnit,
     CompilerInvocation,
     RawBuildCommand,
+    replace_fields,
 )
 from cintel.ports.commands import CommandRunner
 from cintel.ports.services import CompilerCommandParser, CompilerMetadataProvider
 from cintel.utilities.hashing import stable_fingerprint, stable_id
 
 _ENTERING = re.compile(
-    r"^(?:g?make)(?:\[\d+\])?: Entering directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
+    r"^g?make(?:\[\d+\])?: Entering directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
 )
 _LEAVING = re.compile(
-    r"^(?:g?make)(?:\[\d+\])?: Leaving directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
+    r"^g?make(?:\[\d+\])?: Leaving directory [`'\u2018\u2019](.+?)[`'\u2018\u2019]$"
 )
 
 
@@ -46,6 +47,24 @@ class ParsedMakeOutput:
     compiler_invocations: tuple[CompilerInvocation, ...]
     compilation_units: tuple[CompilationUnit, ...]
     diagnostics: tuple[Diagnostic, ...]
+
+
+def _enter_directory(match: re.Match[str], directory_stack: list[Path]) -> None:
+    entered = Path(match.group(1))
+    if not entered.is_absolute():
+        entered = directory_stack[-1] / entered
+    directory_stack.append(entered.resolve())
+
+
+def _leave_directory(
+    directory_stack: list[Path], diagnostics: list[Diagnostic], stripped: str
+) -> None:
+    if len(directory_stack) > 1:
+        directory_stack.pop()
+    else:
+        diagnostics.append(
+            _build_parse_diagnostic(stripped, "Make directory stack underflow")
+        )
 
 
 class MakeBuildDiscovery:
@@ -60,9 +79,8 @@ class MakeBuildDiscovery:
         self._compiler_metadata = compiler_metadata
 
     def command_request(self, configuration: BuildConfiguration) -> CommandRequest:
-        arguments = list(make_dry_run_arguments(configuration))
         return CommandRequest(
-            arguments=tuple(arguments),
+            arguments=make_dry_run_arguments(configuration),
             working_directory=configuration.working_directory
             or configuration.repository_root,
             environment_overrides=configuration.environment_overrides,
@@ -174,7 +192,7 @@ class MakeBuildDiscovery:
                 "saved_artifact": artifact_hash or stable_fingerprint(raw_output),
             }
         )
-        return replace(
+        return replace_fields(
             result,
             input_fingerprint=input_fingerprint,
             build_fingerprint=stable_fingerprint(
@@ -219,21 +237,11 @@ class MakeBuildDiscovery:
                 continue
             entering = _ENTERING.match(stripped)
             if entering:
-                entered = Path(entering.group(1))
-                if not entered.is_absolute():
-                    entered = directory_stack[-1] / entered
-                directory_stack.append(entered.resolve())
+                _enter_directory(entering, directory_stack)
                 continue
             leaving = _LEAVING.match(stripped)
             if leaving:
-                if len(directory_stack) > 1:
-                    directory_stack.pop()
-                else:
-                    diagnostics.append(
-                        _build_parse_diagnostic(
-                            stripped, "Make directory stack underflow"
-                        )
-                    )
+                _leave_directory(directory_stack, diagnostics, stripped)
                 continue
             if _is_make_message(stripped):
                 continue
@@ -296,7 +304,6 @@ class MakeBuildDiscovery:
                 str(effective_directory),
                 configuration.repository_root,
                 configuration.id,
-                configuration.repository_id,
             )
             if parsed is not None:
                 commands.append(
@@ -605,28 +612,14 @@ def _split_shell_commands(value: str) -> tuple[str, ...]:
     start = 0
     index = 0
     quote: str | None = None
-    escaped = False
     while index < len(value):
         character = value[index]
-        if escaped:
-            escaped = False
-            index += 1
-            continue
-        if character == "\\" and quote != "'":
-            escaped = True
-            index += 1
-            continue
-        if character in {"'", '"'}:
-            if quote is None:
-                quote = character
-            elif quote == character:
-                quote = None
-            index += 1
-            continue
         if quote is None and character == ";":
             parts.append(value[start:index])
             start = index + 1
-        elif (
+            index += 1
+            continue
+        if (
             quote is None
             and character == "&"
             and index + 1 < len(value)
@@ -634,10 +627,26 @@ def _split_shell_commands(value: str) -> tuple[str, ...]:
         ):
             parts.append(value[start:index])
             start = index + 2
-            index += 1
-        index += 1
+            index += 2
+            continue
+        index, quote = _advance_quoted_content(value, index, quote)
     parts.append(value[start:])
     return tuple(parts)
+
+
+def _advance_quoted_content(
+    value: str, index: int, quote: str | None
+) -> tuple[int, str | None]:
+    """Consume one non-separator character, tracking escapes and quote toggles."""
+    character = value[index]
+    if character == "\\" and quote != "'":
+        return index + 2, quote
+    if character in {"'", '"'}:
+        if quote is None:
+            return index + 1, character
+        if quote == character:
+            return index + 1, None
+    return index + 1, quote
 
 
 def _is_cd(tokens: list[str]) -> bool:

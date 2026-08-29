@@ -28,6 +28,8 @@ from cintel.domain.models import (
     RepositoryFile,
     SourceAnalysisResult,
     SourceAnalysisStatus,
+    SourceRelationship,
+    SourceSymbol,
     WorkflowStage,
     WorkflowState,
     WorkflowStatus,
@@ -308,71 +310,124 @@ def _resolve_relationships(
         search_directories = _include_search_directories(
             result, files_by_id, include_dirs_by_unit
         )
-        relationships = []
-        result_changed = False
-        for relationship in result.relationships:
-            new_relationship = relationship
-            if (
-                isinstance(relationship, CallRelationship)
-                and relationship.resolution is RelationshipResolution.UNRESOLVED
-            ):
-                new_relationship = _resolve_call(relationship, result, definitions)
-            elif isinstance(relationship, IncludeRelationship):
-                new_relationship = _resolve_include(
-                    relationship, search_directories, files_by_absolute
-                )
-            if new_relationship is not relationship:
-                result_changed = True
-            relationships.append(new_relationship)
-
-        final_result = (
-            replace(result, relationships=tuple(relationships))
-            if result_changed
-            else result
+        relationships, result_changed = _rebuild_relationships(
+            result, definitions, search_directories, files_by_absolute
         )
-        for relationship in relationships:
-            if isinstance(relationship, CallRelationship):
-                if relationship.callee_id is not None:
-                    resolved_calls += 1
-                else:
-                    unresolved_calls += 1
-            elif (
-                isinstance(relationship, IncludeRelationship)
-                and relationship.resolved_file_id is not None
-            ):
-                resolved_includes += 1
+        call_resolved, call_unresolved, includes_resolved = _count_relationships(
+            relationships
+        )
+        resolved_calls += call_resolved
+        unresolved_calls += call_unresolved
+        resolved_includes += includes_resolved
         if result_changed:
-            changed_results[key] = final_result
+            changed_results[key] = replace(result, relationships=tuple(relationships))
 
     return _ResolutionOutcome(
         changed_results, resolved_calls, unresolved_calls, resolved_includes
     )
 
 
+def _rebuild_relationships(
+    result: SourceAnalysisResult,
+    definitions,
+    search_directories: tuple[str, ...],
+    files_by_absolute: dict[str, RepositoryFile],
+) -> tuple[list, bool]:
+    relationships = []
+    result_changed = False
+    for relationship in result.relationships:
+        new_relationship = relationship
+        if (
+            isinstance(relationship, CallRelationship)
+            and relationship.resolution is RelationshipResolution.UNRESOLVED
+        ):
+            new_relationship = _resolve_call(relationship, result, definitions)
+        elif isinstance(relationship, IncludeRelationship):
+            new_relationship = _resolve_include(
+                relationship, search_directories, files_by_absolute
+            )
+        if new_relationship is not relationship:
+            result_changed = True
+        relationships.append(new_relationship)
+    return relationships, result_changed
+
+
+def _count_relationships(
+    relationships: list,
+) -> tuple[int, int, int]:
+    resolved_calls = unresolved_calls = resolved_includes = 0
+    for relationship in relationships:
+        if isinstance(relationship, CallRelationship):
+            if relationship.callee_id is not None:
+                resolved_calls += 1
+            else:
+                unresolved_calls += 1
+        elif (
+            isinstance(relationship, IncludeRelationship)
+            and relationship.resolved_file_id is not None
+        ):
+            resolved_includes += 1
+    return resolved_calls, unresolved_calls, resolved_includes
+
+
 def _graph_analytics(
     results,
 ) -> tuple[int, int, tuple[str, ...]]:
+    definition_names, adjacency, incoming = _build_call_graph(results)
+    entry_ids = [node for node in definition_names if not incoming[node]]
+    reachable = _reachable_from(entry_ids, adjacency)
+    unreachable = len(set(definition_names) - reachable)
+    recursive = {
+        definition_names[node]
+        for node, targets in adjacency.items()
+        if node in targets
+    }
+    return len(entry_ids), unreachable, tuple(sorted(recursive))
+
+
+def _build_call_graph(
+    results,
+) -> tuple[dict[str, str], dict[str, set[str]], dict[str, set[str]]]:
     definition_names: dict[str, str] = {}
     incoming: dict[str, set[str]] = {}
     adjacency: dict[str, set[str]] = {}
     for result in results:
-        for symbol in result.symbols:
-            if isinstance(symbol, FunctionSymbol) and symbol.is_definition:
-                definition_names[symbol.id] = symbol.name
-                incoming.setdefault(symbol.id, set())
-                adjacency.setdefault(symbol.id, set())
+        _register_definitions(result.symbols, definition_names, adjacency, incoming)
     for result in results:
-        for relationship in result.relationships:
-            if isinstance(relationship, CallRelationship) and isinstance(
-                relationship.callee_id, str
-            ):
-                caller = relationship.caller_id
-                callee = relationship.callee_id
-                if caller in adjacency and callee in incoming:
-                    adjacency[caller].add(callee)
-                    incoming[callee].add(caller)
+        _register_calls(result.relationships, adjacency, incoming)
+    return definition_names, adjacency, incoming
 
-    entry_ids = [node for node in definition_names if not incoming[node]]
+
+def _register_definitions(
+    symbols: tuple[SourceSymbol, ...],
+    definition_names: dict[str, str],
+    adjacency: dict[str, set[str]],
+    incoming: dict[str, set[str]],
+) -> None:
+    for symbol in symbols:
+        if isinstance(symbol, FunctionSymbol) and symbol.is_definition:
+            definition_names[symbol.id] = symbol.name
+            incoming.setdefault(symbol.id, set())
+            adjacency.setdefault(symbol.id, set())
+
+
+def _register_calls(
+    relationships: tuple[SourceRelationship, ...],
+    adjacency: dict[str, set[str]],
+    incoming: dict[str, set[str]],
+) -> None:
+    for relationship in relationships:
+        if isinstance(relationship, CallRelationship) and isinstance(
+            relationship.callee_id, str
+        ):
+            caller = relationship.caller_id
+            callee = relationship.callee_id
+            if caller in adjacency and callee in incoming:
+                adjacency[caller].add(callee)
+                incoming[callee].add(caller)
+
+
+def _reachable_from(entry_ids: list[str], adjacency: dict[str, set[str]]) -> set[str]:
     reachable: set[str] = set()
     pending = list(entry_ids)
     while pending:
@@ -381,13 +436,7 @@ def _graph_analytics(
             continue
         reachable.add(node)
         pending.extend(adjacency[node] - reachable)
-    unreachable = len(set(definition_names) - reachable)
-    recursive = {
-        definition_names[node]
-        for node, targets in adjacency.items()
-        if node in targets
-    }
-    return len(entry_ids), unreachable, tuple(sorted(recursive))
+    return reachable
 
 
 def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:
@@ -411,6 +460,22 @@ def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:
     return tuple(diagnostics)
 
 
+def _analysis_status(target_count: int, failed: int) -> CapabilityStatus:
+    if target_count == 0:
+        return CapabilityStatus.UNAVAILABLE
+    if failed:
+        return CapabilityStatus.DEGRADED
+    return CapabilityStatus.AVAILABLE
+
+
+def _call_status(resolved_calls: int, unresolved_calls: int) -> CapabilityStatus:
+    if resolved_calls == 0 and unresolved_calls == 0:
+        return CapabilityStatus.UNAVAILABLE
+    if unresolved_calls == 0:
+        return CapabilityStatus.AVAILABLE
+    return CapabilityStatus.DEGRADED
+
+
 def _capabilities(
     *,
     target_count: int,
@@ -424,20 +489,8 @@ def _capabilities(
     unreachable: int,
     recursive_count: int,
 ) -> tuple[AnalysisCapability, ...]:
-    analysis_status = (
-        CapabilityStatus.UNAVAILABLE
-        if target_count == 0
-        else CapabilityStatus.DEGRADED
-        if failed
-        else CapabilityStatus.AVAILABLE
-    )
-    call_status = (
-        CapabilityStatus.UNAVAILABLE
-        if resolved_calls == 0 and unresolved_calls == 0
-        else CapabilityStatus.AVAILABLE
-        if unresolved_calls == 0
-        else CapabilityStatus.DEGRADED
-    )
+    analysis_status = _analysis_status(target_count, failed)
+    call_status = _call_status(resolved_calls, unresolved_calls)
     graph_status = (
         CapabilityStatus.AVAILABLE
         if definition_graph_exists(entry_points, unreachable, recursive_count)
@@ -465,6 +518,7 @@ def _capabilities(
             evidence=(
                 f"{resolved_calls} resolved",
                 f"{unresolved_calls} unresolved",
+                f"{resolved_includes} includes resolved",
             ),
         ),
         AnalysisCapability(
