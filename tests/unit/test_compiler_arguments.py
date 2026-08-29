@@ -41,7 +41,6 @@ class CompilerArgumentParserTests(unittest.TestCase):
                 str(work),
                 str(root),
                 "build-1",
-                "repository-1",
             )
 
             self.assertIsNotNone(invocations)
@@ -76,7 +75,6 @@ class CompilerArgumentParserTests(unittest.TestCase):
             "/repo",
             "/repo",
             "build-1",
-            "repository-1",
         )
         self.assertIsNotNone(result)
         invocation = result[0]  # type: ignore[index]
@@ -92,14 +90,13 @@ class CompilerArgumentParserTests(unittest.TestCase):
             "/repo",
             "/repo",
             "build-1",
-            "repository-1",
         )
         self.assertIsNotNone(result)
         self.assertEqual(("nice", "-n", "5", "time", "-p"), result[0].launchers)  # type: ignore[index]
 
     def test_returns_none_for_noncompiler_command(self) -> None:
         result = GCCCompilerCommandParser().parse(
-            "ar rcs lib.a main.o", "/repo", "/repo", "build-1", "repository-1"
+            "ar rcs lib.a main.o", "/repo", "/repo", "build-1"
         )
         self.assertIsNone(result)
 

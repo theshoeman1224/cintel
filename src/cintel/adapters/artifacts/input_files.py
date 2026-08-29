@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from cintel.domain.models import (
     InputArtifact,
     InputArtifactType,
     StalenessStatus,
+    replace_fields,
 )
 from cintel.utilities.hashing import stable_id
 from cintel.adapters.artifacts.validation import validate_artifact
@@ -72,7 +72,7 @@ class FileSystemInputArtifactProvider:
     def refresh_staleness(self, artifact: InputArtifact) -> InputArtifact:
         path = Path(artifact.file_path)
         if not path.is_file():
-            return replace(
+            return replace_fields(
                 artifact,
                 staleness_status=StalenessStatus.STALE,
                 validation_messages=artifact.validation_messages
@@ -85,7 +85,7 @@ class FileSystemInputArtifactProvider:
             and source.resolve() != path.resolve()
             and hashlib.sha256(source.read_bytes()).hexdigest() != artifact.content_hash
         )
-        return replace(
+        return replace_fields(
             artifact,
             staleness_status=(
                 StalenessStatus.CURRENT

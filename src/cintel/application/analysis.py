@@ -465,6 +465,7 @@ def _capabilities(
             evidence=(
                 f"{resolved_calls} resolved",
                 f"{unresolved_calls} unresolved",
+                f"{resolved_includes} includes resolved",
             ),
         ),
         AnalysisCapability(

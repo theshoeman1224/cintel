@@ -34,7 +34,6 @@ class GCCCompilerCommandParser:
         working_directory: str,
         repository_root: str,
         build_configuration_id: str,
-        repository_id: str,
     ) -> tuple[CompilerInvocation, ...] | None:
         tokens = shlex.split(raw_command, posix=True)
         compiler_index, launchers = _find_compiler(tokens)

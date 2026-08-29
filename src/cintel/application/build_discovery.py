@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -11,6 +10,7 @@ from cintel.domain.models import (
     BuildDiscoveryResult,
     CompilationUnit,
     FileKind,
+    replace_fields,
 )
 from cintel.ports.services import BuildDiscoveryProvider
 from cintel.ports.storage import AnalysisStorage
@@ -103,7 +103,7 @@ class BuildDiscoveryService:
             if not force:
                 cached = storage.get_cached_build_discovery(input_fingerprint)
                 if cached is not None:
-                    return replace(cached, from_cache=True)
+                    return replace_fields(cached, from_cache=True)
             result = self._provider.discover(configuration)
             return self._complete_and_save(storage, result)
 
@@ -135,7 +135,7 @@ class BuildDiscoveryService:
             for item in storage.list_repository_files(configuration.repository_id)
             if item.kind is FileKind.C_SOURCE
         }
-        result = replace(
+        result = replace_fields(
             result,
             selected_source_files=tuple(sorted(selected)),
             excluded_source_files=tuple(sorted(repository_sources - selected)),

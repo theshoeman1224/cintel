@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +25,7 @@ from cintel.domain.models import (
     CompilationUnit,
     CompilerInvocation,
     RawBuildCommand,
+    replace_fields,
 )
 from cintel.ports.commands import CommandRunner
 from cintel.ports.services import CompilerCommandParser, CompilerMetadataProvider
@@ -173,7 +174,7 @@ class MakeBuildDiscovery:
                 "saved_artifact": artifact_hash or stable_fingerprint(raw_output),
             }
         )
-        return replace(
+        return replace_fields(
             result,
             input_fingerprint=input_fingerprint,
             build_fingerprint=stable_fingerprint(
@@ -295,7 +296,6 @@ class MakeBuildDiscovery:
                 str(effective_directory),
                 configuration.repository_root,
                 configuration.id,
-                configuration.repository_id,
             )
             if parsed is not None:
                 commands.append(
