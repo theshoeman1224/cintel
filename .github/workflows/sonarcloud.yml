@@ -31,6 +31,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-        args: >
-          -Dsonar.projectKey=theshoeman1224_cintel
-          -Dsonar.organization=theshoeman1224
+        with:
+          args: >
+            -Dsonar.projectKey=theshoeman1224_cintel
+            -Dsonar.organization=theshoeman1224
