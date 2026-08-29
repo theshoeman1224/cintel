@@ -10,12 +10,17 @@ class HashingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "source.c"
             path.write_bytes(b"int main(void) { return 0; }\n")
-            self.assertEqual(sha256_file(path), sha256_file(path))
+            self.assertEqual(
+                "2ad75d95660563887d8d3f1d0ae1dcf18c2379cbd83a5c72f5ab276351ee6949",
+                sha256_file(path),
+            )
 
     def test_ids_and_fingerprints_ignore_mapping_order(self) -> None:
-        self.assertEqual(stable_id("file", "a.c"), stable_id("file", "a.c"))
+        self.assertEqual(
+            "file-3953e30b1441063e6a03b4fa",
+            stable_id("file", "a.c"),
+        )
         self.assertEqual(
             stable_fingerprint({"target": "all", "vars": {"B": 2, "A": 1}}),
             stable_fingerprint({"vars": {"A": 1, "B": 2}, "target": "all"}),
         )
-

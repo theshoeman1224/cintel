@@ -5,7 +5,7 @@ from pathlib import Path
 
 from cintel.adapters.parsing import ConservativeCSourceParser
 from cintel.adapters.storage import SQLiteAnalysisStorage
-from cintel.application.analysis import SourceAnalysisService
+from cintel.application.analysis import SourceAnalysisService, _run_diagnostics
 from cintel.application.scanning import ScanWorkflowResult
 from cintel.configuration.models import AppConfig
 from cintel.domain.models import (
@@ -170,6 +170,16 @@ class SourceAnalysisServiceTests(unittest.TestCase):
             "two competing definitions stay unresolved",
         )
         self.assertIsNone(resolutions["ambiguous_target"][1])
+
+    def test_run_diagnostics_returns_empty_or_incomplete_diagnostic(self) -> None:
+        self.assertEqual((), _run_diagnostics(0))
+
+        diagnostics = _run_diagnostics(2)
+        self.assertEqual(1, len(diagnostics))
+        self.assertEqual(
+            "2 analyzed targets could not be parsed; their findings are unavailable.",
+            diagnostics[0].message,
+        )
 
     def test_second_run_reuses_results_until_source_changes(self) -> None:
         record = self._write_source(

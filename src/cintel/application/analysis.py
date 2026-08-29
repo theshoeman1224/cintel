@@ -236,19 +236,22 @@ def _resolve_call(
         if symbol.linkage is Linkage.INTERNAL
         and result.repository_file_id == origin.repository_file_id
     ]
+    callee_id: str | None = None
     if same_file_static:
-        return replace(
-            relationship,
-            callee_id=same_file_static[0].id,
-            resolution=RelationshipResolution.CONFIRMED_DIRECT,
-        )
-    if len(candidates) == 1:
-        return replace(
-            relationship,
-            callee_id=candidates[0][1].id,
-            resolution=RelationshipResolution.CONFIRMED_DIRECT,
-        )
-    return relationship
+        callee_id = same_file_static[0].id
+    elif len(candidates) == 1:
+        callee_id = candidates[0][1].id
+    if callee_id is None:
+        return relationship
+    return CallRelationship(
+        id=relationship.id,
+        caller_id=relationship.caller_id,
+        callee_id=callee_id,
+        callee_spelling=relationship.callee_spelling,
+        resolution=RelationshipResolution.CONFIRMED_DIRECT,
+        evidence=relationship.evidence,
+        confidence=relationship.confidence,
+    )
 
 
 def _include_search_directories(
@@ -276,7 +279,14 @@ def _resolve_include(
         )
         match = files_by_absolute.get(candidate)
         if match is not None:
-            return replace(relationship, resolved_file_id=match.id)
+            return IncludeRelationship(
+                id=relationship.id,
+                source_file_id=relationship.source_file_id,
+                included_spelling=relationship.included_spelling,
+                resolved_file_id=match.id,
+                evidence=relationship.evidence,
+                confidence=relationship.confidence,
+            )
     return relationship
 
 
@@ -381,23 +391,24 @@ def _graph_analytics(
 
 
 def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:
-    if not failed:
-        return ()
-    return (
-        Diagnostic(
-            code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
-            severity=DiagnosticSeverity.WARNING,
-            message=(
-                f"{failed} analyzed targets could not be parsed; "
-                "their findings are unavailable."
+    diagnostics: list[Diagnostic] = []
+    if failed:
+        diagnostics.append(
+            Diagnostic(
+                code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
+                severity=DiagnosticSeverity.WARNING,
+                message=(
+                    f"{failed} analyzed targets could not be parsed; "
+                    "their findings are unavailable."
+                ),
+                missing_capability="complete_source_analysis",
+                recoverability=Recoverability.REDUCED_CAPABILITY,
+                suggested_actions=(
+                    "Inspect the per-file parse diagnostics for the failing targets.",
+                ),
             ),
-            missing_capability="complete_source_analysis",
-            recoverability=Recoverability.REDUCED_CAPABILITY,
-            suggested_actions=(
-                "Inspect the per-file parse diagnostics for the failing targets.",
-            ),
-        ),
-    )
+        )
+    return tuple(diagnostics)
 
 
 def _capabilities(
