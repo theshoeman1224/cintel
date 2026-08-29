@@ -561,29 +561,9 @@ def _parse_directives(
         value = directive.text.strip()
         include = re.match(r"#\s*include\s*([<\"])([^>\"]+)[>\"]", value)
         if include:
-            spelling = include.group(2).strip()
-            location = locations.location(directive.start, directive.end)
             relationships.append(
-                IncludeRelationship(
-                    id=stable_id(
-                        "include",
-                        repository_file.id,
-                        scope,
-                        spelling,
-                        str(directive.start),
-                    ),
-                    source_file_id=repository_file.id,
-                    included_spelling=spelling,
-                    resolved_file_id=None,
-                    evidence=(
-                        RelationshipEvidence(
-                            kind=EvidenceKind.EXTRACTED_FACT,
-                            description="Preprocessor include directive.",
-                            location=location,
-                            provenance=PARSER_NAME,
-                        ),
-                    ),
-                    confidence=1.0,
+                _include_relationship(
+                    directive, repository_file, scope, include.group(2).strip(), locations
                 )
             )
             continue
@@ -594,56 +574,12 @@ def _parse_directives(
             re.DOTALL,
         )
         if define:
-            name = define.group(1)
-            function_like = define.group(2) is not None
-            raw_parameters = define.group(3) or ""
-            parameters = tuple(
-                item.strip() for item in raw_parameters.split(",") if item.strip()
+            symbol, diagnostic = _macro_symbol(
+                define, directive, repository_file, scope, locations
             )
-            replacement = define.group(4).strip() or None
-            location = locations.location(directive.start, directive.end)
-            evidence_kind = (
-                EvidenceKind.HEURISTIC_RESULT
-                if function_like and any(item == "..." or item.endswith("...") for item in parameters)
-                else EvidenceKind.EXTRACTED_FACT
-            )
-            symbols.append(
-                MacroSymbol(
-                    id=stable_id(
-                        "macro",
-                        repository_file.id,
-                        scope,
-                        name,
-                        str(directive.start),
-                    ),
-                    name=name,
-                    location=location,
-                    replacement=replacement,
-                    confidence=(
-                        _MACRO_HEURISTIC_CONFIDENCE
-                        if evidence_kind is EvidenceKind.HEURISTIC_RESULT
-                        else _EXACT_CONFIDENCE
-                    ),
-                    is_function_like=function_like,
-                    parameters=parameters,
-                    evidence=(
-                        RelationshipEvidence(
-                            kind=evidence_kind,
-                            description="Preprocessor macro definition.",
-                            location=location,
-                            provenance=PARSER_NAME,
-                        ),
-                    ),
-                )
-            )
-            if evidence_kind is EvidenceKind.HEURISTIC_RESULT:
-                diagnostics.append(
-                    _diagnostic(
-                        "Variadic macro parameters are retained but not interpreted.",
-                        repository_file,
-                        location=location,
-                    )
-                )
+            symbols.append(symbol)
+            if diagnostic is not None:
+                diagnostics.append(diagnostic)
             continue
 
         if re.match(r"#\s*(if|ifdef|ifndef|elif)\b", value):
@@ -657,6 +593,93 @@ def _parse_directives(
     return symbols, relationships, diagnostics
 
 
+def _include_relationship(
+    directive: _Directive,
+    repository_file: RepositoryFile,
+    scope: str,
+    spelling: str,
+    locations: _Locations,
+) -> IncludeRelationship:
+    return IncludeRelationship(
+        id=stable_id(
+            "include",
+            repository_file.id,
+            scope,
+            spelling,
+            str(directive.start),
+        ),
+        source_file_id=repository_file.id,
+        included_spelling=spelling,
+        resolved_file_id=None,
+        evidence=(
+            RelationshipEvidence(
+                kind=EvidenceKind.EXTRACTED_FACT,
+                description="Preprocessor include directive.",
+                location=locations.location(directive.start, directive.end),
+                provenance=PARSER_NAME,
+            ),
+        ),
+        confidence=1.0,
+    )
+
+
+def _macro_symbol(
+    define: re.Match[str],
+    directive: _Directive,
+    repository_file: RepositoryFile,
+    scope: str,
+    locations: _Locations,
+) -> tuple[MacroSymbol, Diagnostic | None]:
+    name = define.group(1)
+    function_like = define.group(2) is not None
+    raw_parameters = define.group(3) or ""
+    parameters = tuple(
+        item.strip() for item in raw_parameters.split(",") if item.strip()
+    )
+    replacement = define.group(4).strip() or None
+    location = locations.location(directive.start, directive.end)
+    evidence_kind = (
+        EvidenceKind.HEURISTIC_RESULT
+        if function_like and any(item == "..." or item.endswith("...") for item in parameters)
+        else EvidenceKind.EXTRACTED_FACT
+    )
+    symbol = MacroSymbol(
+        id=stable_id(
+            "macro",
+            repository_file.id,
+            scope,
+            name,
+            str(directive.start),
+        ),
+        name=name,
+        location=location,
+        replacement=replacement,
+        confidence=(
+            _MACRO_HEURISTIC_CONFIDENCE
+            if evidence_kind is EvidenceKind.HEURISTIC_RESULT
+            else _EXACT_CONFIDENCE
+        ),
+        is_function_like=function_like,
+        parameters=parameters,
+        evidence=(
+            RelationshipEvidence(
+                kind=evidence_kind,
+                description="Preprocessor macro definition.",
+                location=location,
+                provenance=PARSER_NAME,
+            ),
+        ),
+    )
+    diagnostic = None
+    if evidence_kind is EvidenceKind.HEURISTIC_RESULT:
+        diagnostic = _diagnostic(
+            "Variadic macro parameters are retained but not interpreted.",
+            repository_file,
+            location=location,
+        )
+    return symbol, diagnostic
+
+
 def _top_level_constructs(
     source: str,
 ) -> tuple[tuple[_Construct, ...], tuple[_ConstructIssue, ...]]:
@@ -665,47 +688,88 @@ def _top_level_constructs(
     segment_start = 0
     brace_depth = 0
     index = 0
-    while index < len(source):
-        character = source[index]
-        if character == "{" and brace_depth == 0:
-            header_start = _first_nonspace(source, segment_start, index)
-            header = source[header_start:index]
-            if _function_header(header) is not None:
-                closing = _matching_brace(source, index)
-                if closing is None:
-                    issues.append(
-                        _ConstructIssue(
-                            "Unmatched function body brace.", index, len(source)
-                        )
-                    )
-                    break
-                constructs.append(
-                    _Construct(
-                        kind="function",
-                        start=header_start,
-                        end=closing + 1,
-                        header_end=index,
-                    )
-                )
-                index = closing + 1
-                segment_start = index
-                continue
-            brace_depth = 1
-        elif character == "{" and brace_depth > 0:
-            brace_depth += 1
-        elif character == "}" and brace_depth > 0:
-            brace_depth -= 1
-        elif character == "}" and brace_depth == 0:
-            issues.append(_ConstructIssue("Unmatched closing brace.", index, index + 1))
-            segment_start = index + 1
-        elif character == ";" and brace_depth == 0:
-            start = _first_nonspace(source, segment_start, index + 1)
-            if start < index + 1:
-                constructs.append(
-                    _Construct(kind="declaration", start=start, end=index + 1)
-                )
-            segment_start = index + 1
-        index += 1
+    stop = False
+    while index < len(source) and not stop:
+        index, segment_start, brace_depth, stop = _advance(
+            source, index, segment_start, brace_depth, constructs, issues
+        )
+    issues.extend(_trailing_construct_issues(source, segment_start, brace_depth))
+    return tuple(constructs), tuple(issues)
+
+
+def _advance(
+    source: str,
+    index: int,
+    segment_start: int,
+    brace_depth: int,
+    constructs: list[_Construct],
+    issues: list[_ConstructIssue],
+) -> tuple[int, int, int, bool]:
+    """Consume one character and return ``(next_index, next_segment_start, brace_depth, stop)``."""
+    character = source[index]
+    if character == "{" and brace_depth == 0:
+        return _open_function_body(
+            source, index, segment_start, constructs, issues
+        )
+    if character == "{" and brace_depth > 0:
+        return index + 1, segment_start, brace_depth + 1, False
+    if character == "}" and brace_depth > 0:
+        return index + 1, segment_start, brace_depth - 1, False
+    if character == "}" and brace_depth == 0:
+        issues.append(_ConstructIssue("Unmatched closing brace.", index, index + 1))
+        return index + 1, index + 1, brace_depth, False
+    if character == ";" and brace_depth == 0:
+        declaration = _declaration_at(source, index, segment_start)
+        if declaration is not None:
+            constructs.append(declaration)
+        return index + 1, index + 1, brace_depth, False
+    return index + 1, segment_start, brace_depth, False
+
+
+def _open_function_body(
+    source: str,
+    index: int,
+    segment_start: int,
+    constructs: list[_Construct],
+    issues: list[_ConstructIssue],
+) -> tuple[int, int, int, bool]:
+    """Consume a top-level ``{``.
+
+    A non-function header starts brace tracking (depth 1). An unclosed function
+    body records an issue and stops the scan.
+    """
+    header_start = _first_nonspace(source, segment_start, index)
+    header = source[header_start:index]
+    if _function_header(header) is None:
+        return index + 1, segment_start, 1, False
+    closing = _matching_brace(source, index)
+    if closing is None:
+        issues.append(
+            _ConstructIssue("Unmatched function body brace.", index, len(source))
+        )
+        return index + 1, segment_start, 0, True
+    constructs.append(
+        _Construct(
+            kind="function",
+            start=header_start,
+            end=closing + 1,
+            header_end=index,
+        )
+    )
+    return closing + 1, closing + 1, 0, False
+
+
+def _declaration_at(source: str, index: int, segment_start: int) -> _Construct | None:
+    start = _first_nonspace(source, segment_start, index + 1)
+    if start < index + 1:
+        return _Construct(kind="declaration", start=start, end=index + 1)
+    return None
+
+
+def _trailing_construct_issues(
+    source: str, segment_start: int, brace_depth: int
+) -> list[_ConstructIssue]:
+    issues: list[_ConstructIssue] = []
     if brace_depth:
         issues.append(
             _ConstructIssue("Unmatched top-level brace.", segment_start, len(source))
@@ -720,7 +784,7 @@ def _top_level_constructs(
                 len(source),
             )
         )
-    return tuple(constructs), tuple(issues)
+    return issues
 
 
 def _matching_brace(source: str, opening: int) -> int | None:

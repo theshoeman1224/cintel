@@ -310,45 +310,64 @@ def _resolve_relationships(
         search_directories = _include_search_directories(
             result, files_by_id, include_dirs_by_unit
         )
-        relationships = []
-        result_changed = False
-        for relationship in result.relationships:
-            new_relationship = relationship
-            if (
-                isinstance(relationship, CallRelationship)
-                and relationship.resolution is RelationshipResolution.UNRESOLVED
-            ):
-                new_relationship = _resolve_call(relationship, result, definitions)
-            elif isinstance(relationship, IncludeRelationship):
-                new_relationship = _resolve_include(
-                    relationship, search_directories, files_by_absolute
-                )
-            if new_relationship is not relationship:
-                result_changed = True
-            relationships.append(new_relationship)
-
-        final_result = (
-            replace(result, relationships=tuple(relationships))
-            if result_changed
-            else result
+        relationships, result_changed = _rebuild_relationships(
+            result, definitions, search_directories, files_by_absolute
         )
-        for relationship in relationships:
-            if isinstance(relationship, CallRelationship):
-                if relationship.callee_id is not None:
-                    resolved_calls += 1
-                else:
-                    unresolved_calls += 1
-            elif (
-                isinstance(relationship, IncludeRelationship)
-                and relationship.resolved_file_id is not None
-            ):
-                resolved_includes += 1
+        call_resolved, call_unresolved, includes_resolved = _count_relationships(
+            relationships
+        )
+        resolved_calls += call_resolved
+        unresolved_calls += call_unresolved
+        resolved_includes += includes_resolved
         if result_changed:
-            changed_results[key] = final_result
+            changed_results[key] = replace(result, relationships=tuple(relationships))
 
     return _ResolutionOutcome(
         changed_results, resolved_calls, unresolved_calls, resolved_includes
     )
+
+
+def _rebuild_relationships(
+    result: SourceAnalysisResult,
+    definitions,
+    search_directories: tuple[str, ...],
+    files_by_absolute: dict[str, RepositoryFile],
+) -> tuple[list, bool]:
+    relationships = []
+    result_changed = False
+    for relationship in result.relationships:
+        new_relationship = relationship
+        if (
+            isinstance(relationship, CallRelationship)
+            and relationship.resolution is RelationshipResolution.UNRESOLVED
+        ):
+            new_relationship = _resolve_call(relationship, result, definitions)
+        elif isinstance(relationship, IncludeRelationship):
+            new_relationship = _resolve_include(
+                relationship, search_directories, files_by_absolute
+            )
+        if new_relationship is not relationship:
+            result_changed = True
+        relationships.append(new_relationship)
+    return relationships, result_changed
+
+
+def _count_relationships(
+    relationships: list,
+) -> tuple[int, int, int]:
+    resolved_calls = unresolved_calls = resolved_includes = 0
+    for relationship in relationships:
+        if isinstance(relationship, CallRelationship):
+            if relationship.callee_id is not None:
+                resolved_calls += 1
+            else:
+                unresolved_calls += 1
+        elif (
+            isinstance(relationship, IncludeRelationship)
+            and relationship.resolved_file_id is not None
+        ):
+            resolved_includes += 1
+    return resolved_calls, unresolved_calls, resolved_includes
 
 
 def _graph_analytics(
