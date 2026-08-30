@@ -232,6 +232,9 @@ def apply_operation(fixtures: list[Fixture], operation: str, options: argparse.N
     for fixture in fixtures:
         print(f"\n=== {operation}: {fixture.name} ===")
         print(f"  {fixture.description}")
+        if fixture.module is None:
+            print("  skipped: data-only fixture (no fixture.py)")
+            continue
         missing = fixture.missing_requirements()
         needs_environment = operation == "run"
         if missing and operation != "clean":

@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import io
 import shutil
@@ -51,6 +52,22 @@ class FixtureDriverDiscoveryTests(unittest.TestCase):
     def test_unknown_fixture_name_is_rejected(self) -> None:
         with self.assertRaises(driver.FixtureError):
             driver.select_fixtures(driver.discover_fixtures(), "does-not-exist")
+
+    def test_operations_skip_data_only_fixtures(self) -> None:
+        make = next(
+            fixture
+            for fixture in driver.discover_fixtures()
+            if fixture.name == "make"
+        )
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = driver.apply_operation(
+                [make],
+                "setup",
+                argparse.Namespace(output_dir=None, no_bootstrap=True, python=None, verbose=False),
+            )
+        self.assertEqual(0, code)
+        self.assertIn("skipped: data-only fixture", buffer.getvalue())
 
 
 class FixtureDriverOperationTests(unittest.TestCase):
