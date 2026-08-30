@@ -20,6 +20,22 @@ deterministic analysis architecture does not depend on an AI model.
 
 Python 3.11 or newer is required. No runtime dependencies are required.
 
+### Quickest start
+
+```bash
+./start.sh
+```
+
+The script sets up the `.venv` virtual environment, installs the project,
+optionally runs the test suite, then walks through a first analysis: it asks
+for a repository path (the built-in fixture works as a demo), chooses between
+a live Make dry-run, an imported evidence file, or file-scoped analysis, and
+runs `init`, `doctor`, `scan`, `build discover`/`resume`, and `analyze`. It is
+safe to re-run; existing virtualenvs, workspaces, and analysis state are
+reused.
+
+### Manual installation
+
 ```bash
 python3.11 -m venv .venv
 . .venv/bin/activate
@@ -45,6 +61,27 @@ coverage xml
 ```
 
 Run `sonar-scanner` afterwards so the report is uploaded with the analysis.
+
+## Test fixtures
+
+`scripts/fixtures.py` discovers, sets up, verifies, cleans, and runs the test
+fixtures under `tests/fixtures/` by delegating to the scripts that already
+exist in the repository (the installer, each fixture's own tools, and the
+documented `cintel` CLI flow):
+
+```bash
+python scripts/fixtures.py list                      # fixtures, requirements, operations
+python scripts/fixtures.py setup complex_c_project   # build generated fixture artifacts
+python scripts/fixtures.py verify all                # fixture self-checks
+python scripts/fixtures.py clean all                 # remove generated artifacts
+python scripts/fixtures.py run complex_c_project     # bootstrap, analyze, validate
+```
+
+`run` performs the same steps a user would (`init`, `doctor`, `scan`, `build
+discover`, `analyze`) against a disposable copy of the fixture and validates
+the results against `expected_findings.json`. Committed fixture sources are
+never modified. New fixtures are added by dropping a `fixture.py` into their
+directory; see `tests/fixtures/README.md` for the contract.
 
 ### SonarCloud (PR analysis)
 
