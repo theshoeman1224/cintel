@@ -27,6 +27,9 @@ from cintel.application import (
     RepositoryScanService,
 )
 from cintel.application.analysis import SourceAnalysisService
+from cintel.application.context import ContextService
+from cintel.application.queries import SymbolQueryService
+from cintel.application.reports import ReportService
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,17 +40,23 @@ class Application:
     build_discovery: BuildDiscoveryService
     recovery: GuidedRecoveryService
     analysis: SourceAnalysisService
+    queries: SymbolQueryService
+    context: ContextService
+    reports: ReportService
     ai_provider: DisabledAIProvider
     storage_factory: Callable[[Path], SQLiteAnalysisStorage]
 
 
 def create_application() -> Application:
     command_runner = SubprocessCommandRunner()
+    markdown_renderer = MarkdownReportRenderer()
+    json_renderer = JSONReportRenderer()
+    artifact_writer = FileSystemArtifactWriter()
     scanner = RepositoryScanService(
         discovery=FileSystemRepositoryDiscovery(),
-        markdown_renderer=MarkdownReportRenderer(),
-        json_renderer=JSONReportRenderer(),
-        artifact_writer=FileSystemArtifactWriter(),
+        markdown_renderer=markdown_renderer,
+        json_renderer=json_renderer,
+        artifact_writer=artifact_writer,
         storage_factory=SQLiteAnalysisStorage,
     )
     make_discovery = MakeBuildDiscovery(
@@ -60,6 +69,12 @@ def create_application() -> Application:
         storage_factory=SQLiteAnalysisStorage,
         repository_scanner=scanner,
     )
+    analysis = SourceAnalysisService(
+        parser=ConservativeCSourceParser(),
+        scanner=scanner,
+        storage_factory=SQLiteAnalysisStorage,
+    )
+    query_service = SymbolQueryService(storage_factory=SQLiteAnalysisStorage)
     return Application(
         doctor=DoctorService(command_runner),
         initialization=InitializationService(),
@@ -71,12 +86,21 @@ def create_application() -> Application:
             artifact_provider=FileSystemInputArtifactProvider(),
             guidance_provider=StandardInputGuidanceProvider(),
             guidance_renderer=MarkdownGuidanceRenderer(),
-            artifact_writer=FileSystemArtifactWriter(),
+            artifact_writer=artifact_writer,
             storage_factory=SQLiteAnalysisStorage,
         ),
-        analysis=SourceAnalysisService(
-            parser=ConservativeCSourceParser(),
+        analysis=analysis,
+        queries=query_service,
+        context=ContextService(
+            queries=query_service,
+            artifact_writer=artifact_writer,
+            storage_factory=SQLiteAnalysisStorage,
+        ),
+        reports=ReportService(
             scanner=scanner,
+            markdown_renderer=markdown_renderer,
+            json_renderer=json_renderer,
+            artifact_writer=artifact_writer,
             storage_factory=SQLiteAnalysisStorage,
         ),
         ai_provider=DisabledAIProvider(),

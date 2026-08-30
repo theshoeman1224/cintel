@@ -12,12 +12,16 @@ from cintel.domain.models import (
     AnalysisCapability,
     BuildConfiguration,
     BuildDiscoveryResult,
+    CallEdge,
     CallRelationship,
+    CapabilityStatus,
     CompilationUnit,
     FileKind,
     FunctionSymbol,
     GeneratedReportMetadata,
+    GlobalUsageEdge,
     GlobalUsageRelationship,
+    IncludeEdge,
     IncludeRelationship,
     InputArtifact,
     MacroSymbol,
@@ -25,6 +29,7 @@ from cintel.domain.models import (
     RepositoryFile,
     SourceAnalysisResult,
     SourceSymbol,
+    SymbolOccurrence,
     TypeSymbol,
     VariableSymbol,
     WorkflowStage,
@@ -211,6 +216,27 @@ class SQLiteAnalysisStorage:
             ),
         )
         connection.commit()
+
+    def list_capabilities(
+        self, repository_id: str
+    ) -> tuple[AnalysisCapability, ...]:
+        rows = self._connect().execute(
+            """
+            SELECT name, status, reason, evidence FROM capabilities
+            WHERE repository_id = ?
+            ORDER BY name
+            """,
+            (repository_id,),
+        ).fetchall()
+        return tuple(
+            AnalysisCapability(
+                name=row[0],
+                status=CapabilityStatus(row[1]),
+                reason=row[2],
+                evidence=tuple(json.loads(row[3])),
+            )
+            for row in rows
+        )
 
     def schema_version(self) -> int:
         row = self._connect().execute(
@@ -529,8 +555,10 @@ class SQLiteAnalysisStorage:
         )
         connection.executemany(
             """
-            INSERT INTO source_symbols (analysis_id, id, kind, name, payload)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO source_symbols
+              (analysis_id, id, kind, name, repository_id, repository_file_id,
+               is_definition, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (
@@ -538,6 +566,9 @@ class SQLiteAnalysisStorage:
                     symbol.id,
                     _source_symbol_kind(symbol),
                     symbol.name,
+                    result.repository_id,
+                    result.repository_file_id,
+                    _symbol_is_definition(symbol),
                     json.dumps(asdict(symbol), default=json_default, sort_keys=True),
                 )
                 for symbol in result.symbols
@@ -545,14 +576,20 @@ class SQLiteAnalysisStorage:
         )
         connection.executemany(
             """
-            INSERT INTO source_relationships (analysis_id, id, kind, payload)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO source_relationships
+              (analysis_id, id, kind, repository_id, repository_file_id,
+               caller_id, callee_id, callee_spelling, function_id, variable_id,
+               variable_spelling, source_file_id, resolved_file_id, payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 (
                     result.id,
                     relationship.id,
                     _source_relationship_kind(relationship),
+                    result.repository_id,
+                    result.repository_file_id,
+                    *_relationship_projection_values(relationship),
                     json.dumps(
                         asdict(relationship), default=json_default, sort_keys=True
                     ),
@@ -603,6 +640,151 @@ class SQLiteAnalysisStorage:
             (compilation_unit_id,),
         ).fetchone()
         return self._load_source_analysis(row[0], row[1]) if row else None
+
+    def find_symbols(
+        self,
+        repository_id: str,
+        *,
+        kind: str | None = None,
+        name: str | None = None,
+    ) -> tuple[SymbolOccurrence, ...]:
+        query = """
+            SELECT s.analysis_id, s.kind, s.payload, r.repository_file_id,
+                   r.compilation_unit_id
+            FROM source_symbols AS s
+            JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+            WHERE s.repository_id = ?
+        """
+        arguments: list[str] = [repository_id]
+        if kind is not None:
+            query += " AND s.kind = ?"
+            arguments.append(kind)
+        if name is not None:
+            query += " AND s.name = ?"
+            arguments.append(name)
+        query += " ORDER BY s.kind, s.name, s.id, s.analysis_id"
+        rows = self._connect().execute(query, tuple(arguments)).fetchall()
+        return tuple(
+            SymbolOccurrence(
+                symbol=source_symbol_from_dict(row_kind, json.loads(row_payload)),
+                repository_id=repository_id,
+                repository_file_id=row_repository_file_id,
+                analysis_id=row_analysis_id,
+                compilation_unit_id=row_compilation_unit_id,
+            )
+            for row_analysis_id, row_kind, row_payload, row_repository_file_id, row_compilation_unit_id in rows
+        )
+
+    def get_symbols_by_ids(
+        self, repository_id: str, symbol_ids: tuple[str, ...]
+    ) -> tuple[SymbolOccurrence, ...]:
+        if not symbol_ids:
+            return ()
+        query = f"""
+            SELECT s.analysis_id, s.kind, s.payload, r.repository_file_id,
+                   r.compilation_unit_id
+            FROM source_symbols AS s
+            JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+            WHERE s.repository_id = ? AND s.id IN ({_placeholders(len(symbol_ids))})
+            ORDER BY s.kind, s.name, s.id, s.analysis_id
+        """
+        rows = self._connect().execute(
+            query, (repository_id, *symbol_ids)
+        ).fetchall()
+        return tuple(
+            SymbolOccurrence(
+                symbol=source_symbol_from_dict(row_kind, json.loads(row_payload)),
+                repository_id=repository_id,
+                repository_file_id=row_repository_file_id,
+                analysis_id=row_analysis_id,
+                compilation_unit_id=row_compilation_unit_id,
+            )
+            for row_analysis_id, row_kind, row_payload, row_repository_file_id, row_compilation_unit_id in rows
+        )
+
+    def find_call_edges(
+        self,
+        repository_id: str,
+        *,
+        caller_ids: tuple[str, ...] | None = None,
+        callee_ids: tuple[str, ...] | None = None,
+        callee_spelling: str | None = None,
+    ) -> tuple[CallEdge, ...]:
+        if caller_ids is not None and not caller_ids:
+            return ()
+        if callee_ids is not None and not callee_ids:
+            return ()
+        query = """
+            SELECT s.analysis_id, s.payload, r.repository_file_id
+            FROM source_relationships AS s
+            JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+            WHERE s.repository_id = ? AND s.kind = 'call'
+        """
+        arguments: list[str] = [repository_id]
+        if caller_ids is not None:
+            query += f" AND s.caller_id IN ({_placeholders(len(caller_ids))})"
+            arguments.extend(caller_ids)
+        if callee_ids is not None:
+            query += f" AND s.callee_id IN ({_placeholders(len(callee_ids))})"
+            arguments.extend(callee_ids)
+        if callee_spelling is not None:
+            query += " AND s.callee_spelling = ?"
+            arguments.append(callee_spelling)
+        query += " ORDER BY s.id, s.analysis_id"
+        rows = self._connect().execute(query, tuple(arguments)).fetchall()
+        return tuple(
+            CallEdge(
+                call=source_relationship_from_dict("call", json.loads(row_payload)),
+                repository_id=repository_id,
+                repository_file_id=row_repository_file_id,
+                analysis_id=row_analysis_id,
+            )
+            for row_analysis_id, row_payload, row_repository_file_id in rows
+        )
+
+    def find_global_usage_edges(
+        self, repository_id: str
+    ) -> tuple[GlobalUsageEdge, ...]:
+        query = """
+            SELECT s.analysis_id, s.payload, r.repository_file_id
+            FROM source_relationships AS s
+            JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+            WHERE s.repository_id = ? AND s.kind = 'global_usage'
+            ORDER BY s.id, s.analysis_id
+        """
+        rows = self._connect().execute(query, (repository_id,)).fetchall()
+        return tuple(
+            GlobalUsageEdge(
+                relationship=source_relationship_from_dict(
+                    "global_usage", json.loads(row_payload)
+                ),
+                repository_id=repository_id,
+                repository_file_id=row_repository_file_id,
+                analysis_id=row_analysis_id,
+            )
+            for row_analysis_id, row_payload, row_repository_file_id in rows
+        )
+
+    def find_include_edges(self, repository_id: str) -> tuple[IncludeEdge, ...]:
+        query = """
+            SELECT s.analysis_id, s.payload, r.repository_file_id
+            FROM source_relationships AS s
+            JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+            WHERE s.repository_id = ? AND s.kind = 'include'
+            ORDER BY s.id, s.analysis_id
+        """
+        rows = self._connect().execute(query, (repository_id,)).fetchall()
+        return tuple(
+            IncludeEdge(
+                relationship=source_relationship_from_dict(
+                    "include", json.loads(row_payload)
+                ),
+                repository_id=repository_id,
+                repository_file_id=row_repository_file_id,
+                analysis_id=row_analysis_id,
+            )
+            for row_analysis_id, row_payload, row_repository_file_id in rows
+        )
 
     def _load_source_analysis(
         self, analysis_id: str, payload: str
@@ -660,6 +842,57 @@ def _source_symbol_kind(symbol: SourceSymbol) -> str:
     if isinstance(symbol, MacroSymbol):
         return "macro"
     raise TypeError(f"Unsupported source symbol: {type(symbol).__name__}")
+
+
+def _symbol_is_definition(symbol: SourceSymbol) -> int | None:
+    if isinstance(symbol, (FunctionSymbol, VariableSymbol, TypeSymbol)):
+        return int(symbol.is_definition)
+    return None
+
+
+def _relationship_projection_values(
+    relationship: IncludeRelationship | CallRelationship | GlobalUsageRelationship,
+) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
+    if isinstance(relationship, CallRelationship):
+        return (
+            relationship.caller_id,
+            relationship.callee_id,
+            relationship.callee_spelling,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    if isinstance(relationship, GlobalUsageRelationship):
+        return (
+            None,
+            None,
+            None,
+            relationship.function_id,
+            relationship.variable_id,
+            relationship.variable_spelling,
+            None,
+            None,
+        )
+    if isinstance(relationship, IncludeRelationship):
+        return (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            relationship.source_file_id,
+            relationship.resolved_file_id,
+        )
+    raise TypeError(
+        f"Unsupported source relationship: {type(relationship).__name__}"
+    )
+
+
+def _placeholders(count: int) -> str:
+    return ", ".join("?" for _ in range(count))
 
 
 def _source_relationship_kind(

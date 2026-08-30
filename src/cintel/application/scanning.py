@@ -6,7 +6,11 @@ from typing import Callable
 
 from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
-from cintel.domain.models import GeneratedReportMetadata, RepositoryScan
+from cintel.domain.models import (
+    GeneratedReportMetadata,
+    RepositoryReportData,
+    RepositoryScan,
+)
 from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.services import ReportRenderer, RepositoryDiscoveryProvider
 from cintel.ports.storage import AnalysisStorage
@@ -58,8 +62,27 @@ class RepositoryScanService:
             storage.save_diagnostics(repository_id, result.diagnostics)
             storage.save_capabilities(repository_id, result.capabilities)
 
-            markdown = self._markdown_renderer.render("repository_inventory", result)
-            json_content = self._json_renderer.render("repository_inventory", result)
+            report_data = RepositoryReportData(
+                scan=result,
+                build_configurations=storage.list_build_configurations(
+                    repository_id
+                ),
+                compilation_unit_count=len(
+                    storage.list_compilation_units(repository_id)
+                ),
+                analyzed_file_count=len(
+                    {
+                        item.repository_file_id
+                        for item in storage.list_source_analyses(repository_id)
+                    }
+                ),
+            )
+            markdown = self._markdown_renderer.render(
+                "repository_inventory", report_data
+            )
+            json_content = self._json_renderer.render(
+                "repository_inventory", report_data
+            )
             output = Path(config.output_directory)
             markdown_path = output / "repository.md"
             json_path = output / "reports" / "repository.json"

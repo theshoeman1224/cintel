@@ -252,6 +252,7 @@ class WorkflowStage(StrEnum):
     INPUT_VALIDATION = "input_validation"
     BUILD_DISCOVERY = "build_discovery"
     SOURCE_ANALYSIS = "source_analysis"
+    REPORT = "report"
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,6 +395,170 @@ class SourceAnalysisResult:
     relationships: tuple[SourceRelationship, ...]
     diagnostics: tuple[Diagnostic, ...]
     analyzed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolOccurrence:
+    """A stored symbol together with the analysis that produced it."""
+
+    symbol: SourceSymbol
+    repository_id: str
+    repository_file_id: str
+    analysis_id: str
+    compilation_unit_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CallEdge:
+    """A stored direct-call relationship with its originating analysis."""
+
+    call: CallRelationship
+    repository_id: str
+    repository_file_id: str
+    analysis_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class IncludeEdge:
+    """A stored include relationship with its originating analysis."""
+
+    relationship: IncludeRelationship
+    repository_id: str
+    repository_file_id: str
+    analysis_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalUsageEdge:
+    """A stored global-usage relationship with its originating analysis."""
+
+    relationship: GlobalUsageRelationship
+    repository_id: str
+    repository_file_id: str
+    analysis_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RepositoryReportData:
+    """Input for the repository_inventory report, integrated with build state."""
+
+    scan: RepositoryScan
+    build_configurations: tuple[BuildConfiguration, ...]
+    compilation_unit_count: int
+    analyzed_file_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class BuildSelectionEntry:
+    configuration: str
+    selected: tuple[str, ...]
+    excluded: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BuildSelectionReportData:
+    entries: tuple[BuildSelectionEntry, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CompilationUnitEntry:
+    unit_id: str
+    configuration: str
+    source_path: str | None
+    compiler: str
+    fingerprint: str
+    define_count: int
+    include_path_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CompilationUnitsReportData:
+    entries: tuple[CompilationUnitEntry, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionIndexEntry:
+    name: str
+    relative_path: str
+    line: int
+    is_definition: bool
+    linkage: str
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionIndexReportData:
+    entries: tuple[FunctionIndexEntry, ...]
+    definition_count: int
+    declaration_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CallGraphEdge:
+    caller: str
+    caller_path: str
+    call_site_line: int
+    callee: str
+    callee_path: str | None
+    callee_line: int | None
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
+class CallGraphReportData:
+    edges: tuple[CallGraphEdge, ...]
+    unresolved_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class IncludeIndexEntry:
+    including_path: str
+    line: int
+    included_spelling: str
+    resolved_path: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class IncludeIndexReportData:
+    entries: tuple[IncludeIndexEntry, ...]
+    unresolved_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticsReportData:
+    entries: tuple[Diagnostic, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityIndexReportData:
+    entries: tuple[AnalysisCapability, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolIndexEntry:
+    name: str
+    kind: str
+    relative_path: str
+    line: int
+    is_definition: bool | None
+    linkage: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolIndexReportData:
+    entries: tuple[SymbolIndexEntry, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalUsageIndexEntry:
+    function: str
+    function_path: str
+    variable: str
+    variable_path: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalUsageReportData:
+    entries: tuple[GlobalUsageIndexEntry, ...]
 
 
 @dataclass(frozen=True, slots=True)

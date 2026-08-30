@@ -111,7 +111,14 @@ class SourceAnalysisService:
 
             if results:
                 outcome = _resolve_relationships(
-                    results, files_by_id, include_dirs_by_unit
+                    results,
+                    files_by_id,
+                    include_dirs_by_unit,
+                    frozenset(
+                        unit.source_file_id
+                        for unit in units
+                        if unit.source_file_id is not None
+                    ),
                 )
                 for key in sorted(outcome.changed_results):
                     storage.replace_source_analysis(outcome.changed_results[key])
@@ -230,6 +237,7 @@ def _resolve_call(
     relationship: CallRelationship,
     origin: SourceAnalysisResult,
     definitions: dict[str, list[tuple[SourceAnalysisResult, FunctionSymbol]]],
+    member_file_ids: frozenset[str] | None = None,
 ) -> CallRelationship:
     candidates = definitions.get(relationship.callee_spelling, ())
     same_file_static = [
@@ -241,8 +249,18 @@ def _resolve_call(
     callee_id: str | None = None
     if same_file_static:
         callee_id = same_file_static[0].id
-    elif len(candidates) == 1:
-        callee_id = candidates[0][1].id
+    else:
+        # A call inside a build-configured compilation unit can only link
+        # against definitions that are themselves members of that build;
+        # definitions in excluded sources must not resolve the call.
+        if origin.compilation_unit_id is not None and member_file_ids:
+            candidates = [
+                (result, symbol)
+                for result, symbol in candidates
+                if result.repository_file_id in member_file_ids
+            ]
+        if len(candidates) == 1:
+            callee_id = candidates[0][1].id
     if callee_id is None:
         return relationship
     return CallRelationship(
@@ -296,6 +314,7 @@ def _resolve_relationships(
     results: dict[tuple[str, str | None], SourceAnalysisResult],
     files_by_id: dict[str, RepositoryFile],
     include_dirs_by_unit: dict[str, tuple[str, ...]],
+    member_file_ids: frozenset[str] | None = None,
 ) -> _ResolutionOutcome:
     definitions = _function_definitions(results.items())
     files_by_absolute = {
@@ -311,7 +330,8 @@ def _resolve_relationships(
             result, files_by_id, include_dirs_by_unit
         )
         relationships, result_changed = _rebuild_relationships(
-            result, definitions, search_directories, files_by_absolute
+            result, definitions, search_directories, files_by_absolute,
+            member_file_ids,
         )
         call_resolved, call_unresolved, includes_resolved = _count_relationships(
             relationships
@@ -332,6 +352,7 @@ def _rebuild_relationships(
     definitions,
     search_directories: tuple[str, ...],
     files_by_absolute: dict[str, RepositoryFile],
+    member_file_ids: frozenset[str] | None = None,
 ) -> tuple[list, bool]:
     relationships = []
     result_changed = False
@@ -341,7 +362,9 @@ def _rebuild_relationships(
             isinstance(relationship, CallRelationship)
             and relationship.resolution is RelationshipResolution.UNRESOLVED
         ):
-            new_relationship = _resolve_call(relationship, result, definitions)
+            new_relationship = _resolve_call(
+                relationship, result, definitions, member_file_ids
+            )
         elif isinstance(relationship, IncludeRelationship):
             new_relationship = _resolve_include(
                 relationship, search_directories, files_by_absolute

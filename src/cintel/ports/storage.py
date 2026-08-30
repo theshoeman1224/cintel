@@ -5,12 +5,16 @@ from cintel.domain.models import (
     AnalysisCapability,
     BuildConfiguration,
     BuildDiscoveryResult,
+    CallEdge,
     CompilationUnit,
     GeneratedReportMetadata,
+    GlobalUsageEdge,
+    IncludeEdge,
     InputArtifact,
     Repository,
     RepositoryFile,
     SourceAnalysisResult,
+    SymbolOccurrence,
     WorkflowState,
 )
 
@@ -40,6 +44,10 @@ class AnalysisStorage(Protocol):
     def save_capabilities(
         self, repository_id: str, capabilities: tuple[AnalysisCapability, ...]
     ) -> None: ...
+
+    def list_capabilities(
+        self, repository_id: str
+    ) -> tuple[AnalysisCapability, ...]: ...
 
     def schema_version(self) -> int: ...
 
@@ -82,3 +90,32 @@ class AnalysisStorage(Protocol):
     def get_source_analysis_for_compilation_unit(
         self, compilation_unit_id: str
     ) -> SourceAnalysisResult | None: ...
+
+    def find_symbols(
+        self,
+        repository_id: str,
+        *,
+        kind: str | None = None,
+        name: str | None = None,
+    ) -> tuple[SymbolOccurrence, ...]: ...
+
+    def get_symbols_by_ids(
+        self, repository_id: str, symbol_ids: tuple[str, ...]
+    ) -> tuple[SymbolOccurrence, ...]: ...
+
+    def find_call_edges(
+        self,
+        repository_id: str,
+        *,
+        caller_ids: tuple[str, ...] | None = None,
+        callee_ids: tuple[str, ...] | None = None,
+        callee_spelling: str | None = None,
+    ) -> tuple[CallEdge, ...]: ...
+
+    def find_include_edges(
+        self, repository_id: str
+    ) -> tuple[IncludeEdge, ...]: ...
+
+    def find_global_usage_edges(
+        self, repository_id: str
+    ) -> tuple[GlobalUsageEdge, ...]: ...

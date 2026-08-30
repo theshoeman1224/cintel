@@ -13,15 +13,19 @@ from cintel.domain.models import (
     ArtifactValidationStatus,
     BuildConfiguration,
     BuildDiscoveryResult,
+    CallRelationship,
     CapabilityStatus,
     CompilationUnit,
     CompilerArgumentSet,
     CompilerInvocation,
     FileKind,
+    FunctionSymbol,
     InputArtifact,
     InputArtifactType,
+    RelationshipResolution,
     Repository,
     RepositoryFile,
+    replace_fields,
     PathReference,
     StalenessStatus,
     WorkflowState,
@@ -116,7 +120,7 @@ class SQLiteStorageTests(unittest.TestCase):
             storage = SQLiteAnalysisStorage(database)
             storage.initialize()
 
-            self.assertEqual(5, storage.schema_version())
+            self.assertEqual(SCHEMA_VERSION, storage.schema_version())
             self.assertEqual((), storage.list_repository_files("repository-1"))
             connection = sqlite3.connect(database)
             tables = {
@@ -290,4 +294,102 @@ class SQLiteStorageTests(unittest.TestCase):
             )
             assert replaced is not None
             self.assertEqual(1, len(replaced.symbols))
+            storage.close()
+
+    def test_find_symbols_and_call_edges_use_projection_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "main.c"
+            source.write_text(
+                '#include "project.h"\n'
+                "#define ENABLED 1\n"
+                "static int helper(int value) { return value + 1; }\n"
+                "int run(int input) { return helper(input); }\n",
+                encoding="utf-8",
+            )
+            storage = SQLiteAnalysisStorage(root / "index.sqlite")
+            storage.initialize()
+            repository = Repository(
+                id="repository-1",
+                root=str(root),
+                name="fixture",
+                created_at=datetime.now(timezone.utc),
+            )
+            repository_file = RepositoryFile(
+                id="file-1",
+                repository_id=repository.id,
+                relative_path="main.c",
+                absolute_path=str(source),
+                kind=FileKind.C_SOURCE,
+                size=source.stat().st_size,
+                modified_at=datetime.now(timezone.utc),
+                content_sha256="a" * 64,
+            )
+            storage.save_repository(repository)
+            storage.replace_repository_files(repository.id, (repository_file,))
+            parsed = ConservativeCSourceParser().parse(repository_file, None)
+            symbols_by_name = {
+                item.name: item
+                for item in parsed.symbols
+                if isinstance(item, FunctionSymbol)
+            }
+            unresolved_call = next(
+                item
+                for item in parsed.relationships
+                if isinstance(item, CallRelationship)
+                and item.callee_spelling == "helper"
+            )
+            resolved_call = replace_fields(
+                unresolved_call,
+                callee_id=symbols_by_name["helper"].id,
+                resolution=RelationshipResolution.CONFIRMED_DIRECT,
+            )
+            result = replace_fields(parsed, relationships=(resolved_call,))
+            storage.replace_source_analysis(result)
+
+            functions = storage.find_symbols("repository-1", kind="function")
+            self.assertEqual(
+                {"helper", "run"}, {item.symbol.name for item in functions}
+            )
+            helper_occurrences = storage.find_symbols(
+                "repository-1", kind="function", name="helper"
+            )
+            self.assertEqual(1, len(helper_occurrences))
+            helper = helper_occurrences[0]
+            self.assertEqual("file-1", helper.repository_file_id)
+            self.assertEqual("repository-1", helper.repository_id)
+            self.assertIsNone(helper.compilation_unit_id)
+
+            edges = storage.find_call_edges(
+                "repository-1", callee_spelling="helper"
+            )
+            self.assertEqual(1, len(edges))
+            edge = edges[0]
+            self.assertEqual("helper", edge.call.callee_spelling)
+            self.assertIsNotNone(edge.call.callee_id)
+            self.assertEqual(edge.analysis_id, result.id)
+            self.assertEqual("file-1", edge.repository_file_id)
+
+            callers = storage.get_symbols_by_ids(
+                "repository-1", (edge.call.caller_id,)
+            )
+            self.assertEqual(1, len(callers))
+            self.assertEqual("run", callers[0].symbol.name)
+
+            callee_ids = (edge.call.callee_id,)
+            self.assertEqual(1, len(storage.find_call_edges("repository-1", callee_ids=callee_ids)))
+            self.assertEqual(
+                1, len(storage.find_call_edges("repository-1", caller_ids=(edge.call.caller_id,)))
+            )
+            self.assertEqual(
+                (), storage.find_call_edges("repository-1", caller_ids=("missing",))
+            )
+            self.assertEqual((), storage.find_call_edges("repository-1", callee_ids=()))
+            self.assertEqual((), storage.get_symbols_by_ids("repository-1", ()))
+
+            macros = storage.find_symbols("repository-1", kind="macro")
+            self.assertEqual({"ENABLED"}, {item.symbol.name for item in macros})
+            self.assertEqual(
+                (), storage.find_symbols("repository-1", kind="function", name="absent")
+            )
             storage.close()

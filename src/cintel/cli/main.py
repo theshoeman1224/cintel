@@ -8,14 +8,20 @@ from pathlib import Path
 from typing import Sequence
 
 from cintel.application import parse_assignments, parse_path_placeholders
+from cintel.application.queries import FunctionCandidates
 from cintel.cli.presentation import (
     render_analysis,
     render_build_discovery,
+    render_call_sites,
     render_compilation_units,
+    render_context_result,
     render_doctor,
+    render_function_detail,
     render_initialization,
     render_recovery,
+    render_report_run,
     render_scan,
+    render_symbols,
 )
 from cintel.composition import create_application
 from cintel.configuration.loader import default_config, load_config
@@ -91,6 +97,56 @@ def build_parser() -> argparse.ArgumentParser:
         "show", help="Show compilation units for a source file"
     )
     build_show.add_argument("source_file")
+    symbols = subcommands.add_parser(
+        "symbols", help="List stored symbols from source analysis"
+    )
+    symbols.add_argument(
+        "--kind",
+        choices=["function", "variable", "type", "macro"],
+        help="Filter symbols by kind",
+    )
+    symbols.add_argument("name", nargs="?", help="Exact symbol name to filter by")
+    show = subcommands.add_parser("show", help="Show details for a symbol")
+    show_commands = show.add_subparsers(dest="show_command", required=True)
+    show_function = show_commands.add_parser(
+        "function", help="Show a function definition, callers, and callees"
+    )
+    show_function.add_argument("name")
+    show_function.add_argument(
+        "--file",
+        help="Repository-relative path that defines the function",
+    )
+    callers = subcommands.add_parser("callers", help="List direct callers of a function")
+    callers.add_argument("name")
+    callers.add_argument(
+        "--file", help="Repository-relative path that defines the function"
+    )
+    callees = subcommands.add_parser("callees", help="List direct callees of a function")
+    callees.add_argument("name")
+    callees.add_argument(
+        "--file", help="Repository-relative path that defines the function"
+    )
+    context = subcommands.add_parser(
+        "context", help="Build a deterministic, budgeted context package"
+    )
+    context_commands = context.add_subparsers(dest="context_command", required=True)
+    context_function = context_commands.add_parser(
+        "function", help="Build a context package for a function"
+    )
+    context_function.add_argument("name")
+    context_function.add_argument(
+        "--budget",
+        type=int,
+        default=8000,
+        help="Character budget for the package (default: 8000)",
+    )
+    context_function.add_argument(
+        "--file", help="Repository-relative path that defines the function"
+    )
+    subcommands.add_parser(
+        "report",
+        help="Regenerate all Markdown/JSON report families from stored state",
+    )
     return parser
 
 
@@ -225,6 +281,62 @@ def _run_build_discover(app, config, args) -> int:
     return _diagnostics_exit_code(result.diagnostics)
 
 
+def _run_symbols(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    result = app.queries.symbols(config, kind=args.kind, name=args.name)
+    print(render_symbols(result, args.json))
+    return ExitCode.SUCCESS if result.entries else ExitCode.NO_MATCH
+
+
+def _run_show(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    if args.show_command == "function":
+        result = app.queries.function(config, args.name, file=args.file)
+        print(render_function_detail(result, args.json))
+        if isinstance(result, FunctionCandidates):
+            return ExitCode.NO_MATCH
+        return ExitCode.SUCCESS
+    return ExitCode.FAILURE
+
+
+def _run_function_query(app, args, query) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    result = query(config, args.name, file=args.file)
+    if isinstance(result, FunctionCandidates):
+        print(render_function_detail(result, args.json))
+        return ExitCode.NO_MATCH
+    print(render_call_sites(args.name, result, args.json))
+    return ExitCode.SUCCESS if result else ExitCode.NO_MATCH
+
+
+def _run_callers(app, args) -> int:
+    return _run_function_query(app, args, app.queries.callers)
+
+
+def _run_callees(app, args) -> int:
+    return _run_function_query(app, args, app.queries.callees)
+
+
+def _run_context(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    if args.context_command == "function":
+        result = app.context.context_function(
+            config, args.name, file=args.file, budget=args.budget
+        )
+        print(render_context_result(result, args.json))
+        if isinstance(result, FunctionCandidates):
+            return ExitCode.NO_MATCH
+        return ExitCode.SUCCESS
+    return ExitCode.FAILURE
+
+
+def _run_report(app, args) -> int:
+    config = _resolve_config(args.config, args.repository, args.output_directory)
+    result = app.reports.generate_all(config)
+    print(render_report_run(result, args.json))
+    return _diagnostics_exit_code(result.diagnostics)
+
+
 _HANDLERS = {
     "init": _run_init,
     "doctor": _run_doctor,
@@ -234,6 +346,12 @@ _HANDLERS = {
     "resume": _run_recovery,
     "analyze": _run_analyze,
     "build": _run_build,
+    "symbols": _run_symbols,
+    "show": _run_show,
+    "callers": _run_callers,
+    "callees": _run_callees,
+    "context": _run_context,
+    "report": _run_report,
 }
 
 

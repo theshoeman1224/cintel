@@ -1,9 +1,9 @@
 # Complex legacy C integration fixture
 
 This deterministic fixture models a small sensor-processing and message-routing system.
-It exists to exercise repository inventory, GNU Make discovery, compiler flags, future
-source intelligence, diagnostics, reporting, graceful degradation, and context-package
-selection.
+It exists to exercise repository inventory, GNU Make discovery, compiler flags, source
+analysis, symbol/call-graph reporting, diagnostics, graceful degradation, and
+context-package selection.
 
 ## Layout
 
@@ -109,10 +109,21 @@ PYTHONPATH=src python3 -m cintel \
 
 The current implementation exports repository JSON at
 `/tmp/cintel-complex-fixture/reports/repository.json` and build JSON to standard output.
-The main integration test combines these as `repository_report` and `build_report`:
+The main integration test runs `analyze --build-config linux` and `report`, then combines
+the repository report, build report, and the Phase 6 analysis report families
+(`symbol_index`, `call_graph`, `include_index`, `global_usage`) as `analysis_report`:
 
 ```json
-{"repository_report": {}, "build_report": {}}
+{
+  "repository_report": {},
+  "build_report": {},
+  "analysis_report": {
+    "symbol_index": {"entries": []},
+    "call_graph": {"edges": []},
+    "include_index": {"entries": []},
+    "global_usage": {"entries": []}
+  }
+}
 ```
 
 Validate that envelope with:
@@ -126,6 +137,13 @@ python3 tests/fixtures/complex_c_project/tools/validate_cintel_results.py \
 
 The validator reports unsupported current-phase source findings separately from missing
 supported findings; it does not silently turn unsupported capabilities into passes.
+Required symbols must appear in the `symbol_index` report (by name, kind, and path);
+required calls must appear as resolved `confirmed_direct` edges in the `call_graph`
+report; required includes must match the `include_index` report; and required global
+reads/writes must match the `global_usage` report (the conservative parser records the
+usage without read/write direction). Heuristic findings — macro-generated symbols, weak
+symbols, possible indirect calls, and include cycles — remain in the skipped-heuristic
+bucket by design.
 
 ## Guided recovery
 

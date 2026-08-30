@@ -1,8 +1,8 @@
 # Expected findings
 
 This document distinguishes deterministic MVP expectations from findings that require
-future source intelligence. The machine-readable source of truth is
-`expected_findings.json`.
+future source intelligence (macro-generated code, weak symbols, indirect dispatch).
+The machine-readable source of truth is `expected_findings.json`.
 
 ## 1. Repository discovery
 
@@ -28,7 +28,7 @@ preservation are deterministic current-MVP expectations.
 
 ## 4. Functions
 
-Mandatory future source findings include `main`, `application_initialize`,
+Mandatory source findings include `main`, `application_initialize`,
 `application_run`, `router_classify_message`, and the static recursive
 `perform_retry_sequence`. Macro-generated plugin handlers are heuristic.
 
@@ -37,19 +37,21 @@ Mandatory future source findings include `main`, `application_initialize`,
 The deterministic direct chain is `main -> application_initialize/application_run`,
 then initialization calls configuration, platform, sensor, router, plugins, state
 machine, and conditionally telemetry. Runtime execution calls sensor polling, routing,
-and state processing. These are mandatory once direct-call extraction is implemented.
+and state processing. These are mandatory: the call_graph report must contain them
+as resolved `confirmed_direct` edges for the selected configuration.
 
 ## 6. Includes
 
-Project include relationships and the guarded `cycle_a.h`/`cycle_b.h` cycle are future
-source-analysis expectations. The build-level include and system-include paths are
-already mandatory and deterministic.
+Project include relationships are mandatory in the include_index report. The guarded
+`cycle_a.h`/`cycle_b.h` cycle stays heuristic (the conservative parser does not track
+conditional includes). The build-level include and system-include paths are already
+mandatory and deterministic.
 
 ## 7. Types
 
 Expected types include enums, nested structures, a union, bit fields, callback typedefs,
-forward declarations, and the opaque `PlatformContext`. Type extraction is not exported
-by the current phase.
+forward declarations, and the opaque `PlatformContext`. Type definitions are exported
+by the symbol_index report (kind `type`) and validated by name and path.
 
 ## 8. Globals
 

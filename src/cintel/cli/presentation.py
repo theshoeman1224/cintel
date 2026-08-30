@@ -8,7 +8,15 @@ from enum import Enum
 from typing import Any
 
 from cintel.application.analysis import AnalysisRunSummary
+from cintel.application.context import ContextResult
 from cintel.application.initialization import InitializationResult
+from cintel.application.queries import (
+    FunctionCandidates,
+    FunctionDetail,
+    SymbolEntry,
+    SymbolsResult,
+)
+from cintel.application.reports import ReportRunResult
 from cintel.application.scanning import ScanWorkflowResult
 from cintel.domain.models import DoctorReport, RecoveryResult
 from cintel.domain.models import BuildDiscoveryResult, CompilationUnit
@@ -195,6 +203,120 @@ def render_recovery(result: RecoveryResult, as_json: bool = False) -> str:
         )
     if result.build_result is not None:
         lines.append(f"Recovered compilation units: {len(result.build_result.compilation_units)}")
+    return "\n".join(lines)
+
+
+def render_symbols(result: SymbolsResult, as_json: bool = False) -> str:
+    if as_json:
+        return _json(result)
+    if not result.entries:
+        return "No symbols found."
+    lines = [f"Symbols: {len(result.entries)}"]
+    lines.extend(_symbol_line(entry) for entry in result.entries)
+    return "\n".join(lines)
+
+
+def render_function_detail(
+    result: FunctionDetail | FunctionCandidates, as_json: bool = False
+) -> str:
+    if as_json:
+        return _json(result)
+    if isinstance(result, FunctionCandidates):
+        return _render_candidates(result)
+    lines = [
+        f"Function: {result.definition.name}",
+        f"Location: {result.definition.relative_path}:{result.definition.line}",
+        f"Kind: {'definition' if result.definition.is_definition else 'declaration'}"
+        f" ({result.definition.linkage or 'unknown'} linkage)",
+        f"Signature: {result.definition.detail}",
+    ]
+    lines.extend(_relationship_block("Callers", result.callers))
+    lines.extend(_relationship_block("Callees", result.callees))
+    if result.declarations:
+        lines.append("Declarations:")
+        lines.extend(f"  {_symbol_line(entry)}" for entry in result.declarations)
+    return "\n".join(lines)
+
+
+def render_call_sites(name: str, sites, as_json: bool = False) -> str:
+    if as_json:
+        return _json(sites)
+    if not sites:
+        return f"No call relationships found for {name}."
+    lines = [f"Call relationships for {name}: {len(sites)}"]
+    for site in sites:
+        lines.append(
+            f"  {site.function_name} ({site.resolution}) at "
+            f"{site.relative_path}:{site.line}"
+        )
+    return "\n".join(lines)
+
+
+def _render_candidates(result: FunctionCandidates) -> str:
+    lines = [
+        f"Ambiguous function name: {result.name} "
+        f"({len(result.candidates)} definitions); rerun with --file to choose one."
+    ]
+    lines.extend(f"  {_symbol_line(entry)}" for entry in result.candidates)
+    return "\n".join(lines)
+
+
+def _relationship_block(title: str, sites) -> list[str]:
+    if not sites:
+        return [f"{title}: none"]
+    lines = [f"{title}: {len(sites)}"]
+    for site in sites:
+        lines.append(
+            f"  {site.function_name} ({site.resolution}) at "
+            f"{site.relative_path}:{site.line}"
+        )
+    return lines
+
+
+def _symbol_line(entry: SymbolEntry) -> str:
+    state = "definition" if entry.is_definition else "declaration"
+    if entry.is_definition is None:
+        state = "symbol"
+    return (
+        f"{entry.kind} {entry.name} [{state}] {entry.relative_path}:{entry.line}"
+        f" {entry.detail}".rstrip()
+    )
+
+
+def render_context_result(
+    result: ContextResult | FunctionCandidates, as_json: bool = False
+) -> str:
+    if as_json:
+        return _json(result)
+    if isinstance(result, FunctionCandidates):
+        return _render_candidates(result)
+    package = result.package
+    lines = [
+        f"Context package: {result.output_path}",
+        f"Budget: {package.used_characters} of {package.character_budget} characters",
+        f"Sections: {len(package.sections)}",
+    ]
+    for title, body in package.sections:
+        lines.append(f"  {title} ({len(body)} chars)")
+    for capability in package.capabilities:
+        lines.append(
+            f"[{capability.status.value}] {capability.name}: {capability.reason}"
+        )
+    return "\n".join(lines)
+
+
+def render_report_run(result: ReportRunResult, as_json: bool = False) -> str:
+    if as_json:
+        return _json(result)
+    lines = [
+        f"Reports generated: {len(result.reports)}",
+    ]
+    for report in result.reports:
+        lines.append(f"  {report.report_name} [{report.format}]: {report.path}")
+    for diagnostic in result.diagnostics:
+        lines.append(
+            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
+        )
     return "\n".join(lines)
 
 

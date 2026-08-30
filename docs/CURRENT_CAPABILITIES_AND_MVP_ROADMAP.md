@@ -1,10 +1,12 @@
 # Legacy C Code Intelligence: Current Capabilities and MVP Roadmap
 
-- Audit date: 2026-08-10, re-verified 2026-08-22
+- Audit date: 2026-08-10, re-verified 2026-08-30
 - Audited base revision: `83294e9` (`main`); Phase 5B landed on `main`
-- Implemented vertical slices: Phases 1–4, Phase 5A foundation, and the
-  Phase 5B source-analysis workflow and resolution
-- Recommended next vertical slice: Phase 6, reports, queries, and context
+- Implemented vertical slices: Phases 1–4, Phase 5A foundation, the
+  Phase 5B source-analysis workflow and resolution, and Phase 6
+  (query commands, function context packages, report families)
+- Recommended next vertical slice: Phase 7, optional GCC enrichment
+  (the deterministic MVP is otherwise complete)
 
 ## Executive summary
 
@@ -17,21 +19,31 @@ SQLite, and guide a user through supplying missing build evidence.
 Phase 5A adds a conservative parser that extracts includes, macros, function
 definitions and declarations, basic named types, typedefs, file-scope
 variables, direct-call candidates from function bodies, and same-file
-variable usages. Schema version 5 stores those symbols, include relationships,
-parser diagnostics, and per-file or per-compilation-unit analysis state.
+variable usages. Schema version 6 stores those symbols, include relationships,
+parser diagnostics, and per-file or per-compilation-unit analysis state, with
+denormalized query-projection columns added for Phase 6 symbol and
+call-graph queries.
 
 Phase 5B adds `cintel analyze`: an application service that parses scanned
 files and build-aware compilation units with incremental reuse by source
 hash, compilation-unit fingerprint, and parser version. It resolves direct
 calls deterministically (same-file static definitions first, then a single
-repository-wide definition; ambiguous targets stay unresolved), resolves
+repository-wide definition, restricted to build-member files for
+build-configured callers; ambiguous targets stay unresolved), resolves
 includes against source directories and compilation-unit `-I` paths, and
 derives entry-point reachability plus direct-recursion cycles from the call
 graph.
 
-The next phase should turn that index into the developer-facing symbol,
-relationship, and context reports required for the MVP. Optional GCC
-enrichment remains Phase 7.
+Phase 6 turns that index into developer-facing output: schema v6 adds
+query-projection columns, the query commands (`symbols`, `show function`,
+`callers`, `callees`) answer symbol and relationship questions with
+deterministic disambiguation, `cintel context function` builds a budgeted
+context package per function, and `cintel report` generates every Markdown
+and JSON report family — including a build-state-integrated repository
+inventory — through the report-renderer adapters with `CI-GEN-001` failure
+diagnostics. The complex fixture's validator now enforces mandatory analysis
+findings against the new JSON reports. Optional GCC enrichment remains
+Phase 7; final MVP hardening follows it.
 
 ## Verification baseline
 
@@ -43,16 +55,17 @@ PYTHONPATH=src python3 -m cintel --help
 PYTHONPATH=src python3 -m cintel build --help
 ```
 
-Result (re-verified 2026-08-22 after Phase 5B):
+Result (re-verified 2026-08-30 after Phase 6):
 
-- 110 tests passed: 98 unit and 12 integration, including the live complex
-  fixture build, the cleanup-effort safety nets, and the new analysis
-  workflow tests.
-- New safety-net suites cover the guided-recovery service against fake ports,
-  CLI presentation renderers, serialization round trips for all symbol and
-  relationship kinds, schema migrations from v2/v3/v4 snapshots, the
-  command-runner timeout path, and repository-id stability across path
-  spellings.
+- 177 tests passed: 145 unit and 32 integration, including the live complex
+  fixture build, the cleanup-effort safety nets, the analysis workflow tests,
+  and the new Phase 6 query, context, report, and migration suites.
+- New Phase 6 suites cover schema v6 migrations with projection backfill from
+  v2/v3/v4/v5 snapshots, the storage query methods, the symbol query service
+  (disambiguation, callers/callees, deduplication), the context service
+  (budgeting, truncation, determinism), every report family in both formats,
+  the integrated inventory build state, and end-to-end CLI behavior with
+  exit-code contracts.
 - The cleanup unified repository-id derivation and exclusion matching (doctor
   now skips excluded files exactly as scan does), consolidated the storage
   lifecycle and diagnostic serialization, decomposed the parser, Make
@@ -60,10 +73,14 @@ Result (re-verified 2026-08-22 after Phase 5B):
   outputs were verified byte-identical against pre-refactor dumps over every
   fixture sample.
 - The CLI exposes `init`, `doctor`, `scan`, `setup`, `instructions`, `resume`,
-  and the `build discover`, `build units`, and `build show` subcommands.
+  `analyze`, the `build discover`, `build units`, and `build show` subcommands,
+  and the Phase 6 commands `symbols`, `show function`, `callers`, `callees`,
+  `context function`, and `report`.
 - The complex C fixture verifies scanning, saved and live-style Make discovery,
   compiler argument handling, multiple build configurations, generated-input
-  guidance, all six artifact validators, artifact staleness, and resumability.
+  guidance, all six artifact validators, artifact staleness, resumability, and
+  mandatory analysis findings validated against the Phase 6 JSON reports
+  (28 passed, 0 missing, 4 heuristic, 2 unsupported by design).
 - A parser smoke test processed all 37 C/header files in the complex fixture
   without crashing.
 - The package has no runtime third-party dependencies.
@@ -85,8 +102,8 @@ or `PYTHONPATH=src` when run directly from a fresh checkout.
 | Compiler adapters | Partially implemented | GCC-style argument parsing and compiler version lookup exist. General GCC capability probing and enrichment do not. |
 | Repository adapter | Implemented | Filesystem discovery, exclusions, hashing, metadata, and incremental hash reuse exist. |
 | Source parser adapter | Phase 5A/5B implemented | The conservative parser implements offset-preserving masking plus symbol, call-candidate, and variable-usage extraction behind `SourceParser`; `SourceAnalysisService` orchestrates it with incremental reuse and deterministic resolution. |
-| SQLite adapter | Implemented through Phase 5A | Schema version 5 adds source-analysis runs, symbols, relationships, and context-scoped parser diagnostics to the Phase 1–4 state. `list_build_configurations` is a reserved port surface until Phase 6 query workflows need it. |
-| Report adapters | Partially implemented | Markdown and JSON repository inventory plus Markdown recovery instructions exist. Build, symbol, graph, diagnostics, capability, and context report families are incomplete. |
+| SQLite adapter | Implemented through Phase 5A | Schema version 6 keeps the Phase 1–5 state plus source-analysis runs, symbols, and relationships, and adds denormalized query-projection columns (repository/file identity, definition flags, caller/callee ids and spellings) with matching indexes so Phase 6 queries run in SQL. Migrations backfill the projections from stored payloads. `list_build_configurations` remains a reserved port surface until Phase 6 query workflows need it. |
+| Report adapters | Implemented | Markdown and JSON renderers cover the repository inventory (with persisted build state), build selection, compilation units, function index, call graph, include index, diagnostics index, capability index, and the Markdown recovery guidance. All families dispatch on report name and reject unsupported names. |
 | AI adapter | Implemented as disabled | The deterministic core does not depend on AI. Requests to generate AI content fail explicitly. |
 | Composition root | Implemented | Dependencies are constructed in `composition.py`; there are no global service instances. |
 
@@ -222,6 +239,81 @@ Build discovery:
 `cintel build show <source-file>` filters them by source and optional build
 configuration.
 
+### Symbol, call-graph, and relationship queries
+
+Phase 6 adds read-only queries over the stored analysis index (schema v6
+query-projection columns):
+
+- `cintel symbols [--kind function|variable|type|macro] [name]` lists stored
+  symbols with kind, location, definition/declaration state, linkage, and a
+  kind-specific detail (signature, type spelling, or macro replacement);
+- `cintel show function <name> [--file <relative-path>]` presents the
+  definition, its declarations, direct callers with call-site locations, and
+  direct callees with definition locations;
+- `cintel callers <name>` and `cintel callees <name>` list the same resolved
+  and unresolved direct-call edges on their own;
+- duplicate function names list their candidate definitions and exit with
+  status 1; `--file` selects one definition deterministically;
+- empty results exit with status 1; `--json` renders every query as
+  machine-readable output.
+
+Because symbol ids embed the compilation-unit scope, the same definition can
+be stored once per build configuration; queries collapse those duplicates by
+source location, so every symbol is presented once.
+
+### Function context packages
+
+`cintel context function <name> [--budget N] [--file <relative-path>]`
+builds a deterministic, budgeted `ContextPackage` for one function and
+writes it under `context/<name>__<path-slug>.md` in the output directory:
+
+- sections fill in a fixed priority order: definition excerpt, declarations,
+  preceding comment block, callers, callees, globals used, local types, file
+  macros, relevant headers (includes of the defining file plus declaration
+  locations), compiler defines and include paths for the unit, and
+  capability/confidence/provenance notes;
+- the default budget is 8000 characters; the first section that does not fit
+  ends the package, only the definition excerpt may be truncated (with an
+  explicit marker), and an `Omitted sections` note records what was dropped;
+- packages carry `character_budget` and `used_characters` plus a
+  deterministic-context capability record;
+- generated files are recorded in the generated-reports metadata under the
+  `function_context:<filename>` report name; and
+- ambiguous names behave like the query commands: candidates are listed and
+  the command exits with status 1.
+
+### Reports
+
+`cintel report` regenerates every report family from persisted state in
+both Markdown and JSON through the report-renderer adapters. The
+repository inventory (`repository.md`, `reports/repository.json`) is
+refreshed incrementally by the scan service and now integrates persisted
+build state — configuration names, compilation-unit counts, and files with
+analysis results — replacing the former scan-only build-awareness
+disclaimer (the stale wording flagged by this audit is fixed).
+
+Families written under `reports/` (each with `GeneratedReportMetadata`
+per format):
+
+- `build_selection` — selected sources and excluded C sources per
+  configuration;
+- `compilation_units` — units with configuration, source, compiler,
+  fingerprint, define, and include-path counts;
+- `function_index` — deduplicated functions with definition/declaration
+  state, linkage, and location, plus definition and declaration counts;
+- `call_graph` — deduplicated direct-call edges with caller, call-site
+  line, callee definition, and resolution, plus an unresolved count;
+- `include_index` — include directives with resolved targets and an
+  unresolved count;
+- `diagnostics_index` and `capability_index` — every diagnostic and
+  capability record.
+
+Failures render as `CI-GEN-001` (report generation failed) diagnostics with
+reduced-capability recoverability; a failing family never aborts the
+remaining ones. Except for the timestamped inventory, identical stored
+state produces byte-identical reports. Report generation records a
+`report` workflow state.
+
 ### Guided input and recovery
 
 `cintel setup`, `cintel instructions`, and `cintel resume` provide the Phase 4
@@ -282,11 +374,21 @@ The current implementation creates or uses:
     input/
     cache/
     context/
+        <function>__<path-slug>.md
     files/
     folders/
     graphs/
     reports/
         repository.json
+        build_selection.{md,json}
+        compilation_units.{md,json}
+        function_index.{md,json}
+        symbol_index.{md,json}
+        call_graph.{md,json}
+        include_index.{md,json}
+        global_usage.{md,json}
+        diagnostics_index.{md,json}
+        capability_index.{md,json}
     symbols/
 ```
 
@@ -295,8 +397,12 @@ Some directories are reserved for later phases. At present:
 - `repository.md` is the primary human-readable repository inventory;
 - `REQUIRED_INPUTS.md` is the human-readable recovery guide;
 - `reports/repository.json` is the machine-readable inventory;
-- build discovery and unit views are rendered through CLI output; and
-- `index.sqlite` contains durable Phase 1–5A state, including parser results.
+- `context/` holds deterministic function context packages written by
+  `cintel context function`;
+- `reports/` holds the Phase 6 Markdown/JSON report families alongside
+  `reports/repository.json`; and
+- `index.sqlite` contains durable Phase 1–6 state, including parser results,
+  query-projection columns, and generated-report metadata.
 
 ## Diagnostics currently implemented
 
@@ -307,26 +413,36 @@ The codebase currently emits stable codes in these families:
 - `CI-COMP-001` and `CI-COMP-002`; and
 - `CI-INPUT-001` through `CI-INPUT-003`; and
 - `CI-PARSE-001`; and
-- `CI-ANLZ-001`.
+- `CI-ANLZ-001`; and
+- `CI-GEN-001`.
 
 All identifiers are defined once as the `DiagnosticCode` enumeration in
 `cintel.domain.diagnostics`; the string values are the public contract.
 Command classifications (`compiler`, `directory_change`, `unparsed`,
 `recursive_make`, `other`) are likewise defined as `CommandClassification`,
-and workflow stages as `WorkflowStage`, both in `cintel.domain.models`.
+and workflow stages (including the Phase 6 `report` stage) as
+`WorkflowStage`, both in `cintel.domain.models`.
 
 The domain diagnostic includes severity, message, technical details, missing
 capability, recoverability, suggested actions, related paths, related commands,
 and metadata.
 
-Report-generation diagnostics such as `CI-GEN-001` remain to be introduced.
+`CI-GEN-001` reports a failed report-family generation with
+reduced-capability recoverability; generation of the remaining families
+continues.
 
 ## Known gaps and current limitations
 
 ### Functional gaps
 
-- `cintel analyze` exists, but there are no symbol/relationship query
-  commands or generated reports yet (Phase 6).
+- Symbol/relationship query commands, deterministic function context
+  packages, and all report families including `cintel report` exist;
+  remaining Phase 6 work is the complex-fixture analysis-finding validation
+  and documentation reconciliation.
+- Call resolution is monotonic by design: an already-resolved call keeps its
+  original target even when a later analysis pass introduces a competing
+  definition; re-running `analyze --force-analysis` after sources change
+  recomputes resolution from scratch.
 - Includes resolve against source directories and unit `-I` paths; system
   headers and absent generated headers stay explicitly unresolved.
 - Declaration-to-definition linkage manifests through resolved call targets;
@@ -349,21 +465,21 @@ will remain explicit limitations.
 
 ### Audit findings to correct during subsequent work
 
-Status update 2026-08-22: the stale scan capability reason ("not implemented
-until Phase 3") and the scan-only build-awareness wording in `repository.md`
-were corrected by the cleanup effort; see `docs/REFACTOR_PLAN.md` Phases 1
-and 5. The remaining items below still stand.
+Status update 2026-08-30: Phase 6 corrected the scan-only build-awareness
+wording and integrated persisted build state into the repository inventory
+(see below). The remaining items still stand.
 
-- `repository.md` remains scan-scoped by design; it now says so explicitly,
-  and integrating persisted build discoveries belongs to Phase 6 report work.
+- Corrected in Phase 6: `repository.md` no longer remains scan-scoped; the
+  inventory now integrates persisted build discoveries, and the stale
+  scan-only build-awareness wording was replaced.
 - Parts of the README still describe the implemented guided-recovery commands
   and complex fixture as planned future work.
 - The direct-from-checkout test command in the README assumes an editable
   installation; without one it needs `PYTHONPATH=src`.
 - `CompilerProvider` remains an architectural seam rather than a complete
   enrichment provider; `SourceParser` now has a Phase 5A adapter.
-- SQLite now stores source symbols and relationships, but query/report
-  workflows are not wired to the CLI.
+- SQLite stores source symbols and relationships; Phase 6 query commands are
+  wired to the CLI, while report/context workflows are still pending.
 
 These are documentation/report integration issues or later-phase gaps; they do
 not invalidate the passing Phase 1–5A test baseline.
@@ -389,7 +505,10 @@ output; context packaging and rich report families belong there.
    bodies (control keywords and member-access dispatch excluded) plus
    same-file variable usages.
 5. Calls resolve to a same-file static definition first, then to a single
-   repository-wide definition; ambiguous targets stay unresolved.
+   repository-wide definition; ambiguous targets stay unresolved. For
+   build-configured callers, repository-wide candidates are restricted to
+   definitions in files that are members of the selected build, so excluded
+   per-platform sources cannot shadow the in-build definition.
 6. Declaration-to-definition linkage manifests through resolved call targets;
    file-scoped symbols are never collapsed.
 7. Includes resolve using the including file's directory and compilation-unit
@@ -409,35 +528,31 @@ and forced reanalysis on the repository fixtures.
 
 ### Phase 5B: Source-analysis workflow and relationships
 
-Implemented (see above). Deferred detail: extending the complex fixture's
-validator with mandatory analysis findings belongs to the Phase 6 report work
-so the fixture gains machine-readable expectations alongside the new reports.
+Implemented (see above).
 
 ### Phase 6: Reports, queries, and context
 
-Required:
+Implemented (see above). Delivered against the plan:
 
-- `cintel symbols`;
-- `cintel show function <name>`;
-- `cintel callers <name>`;
-- `cintel callees <name>`;
-- `cintel context function <name> [--budget N]`;
-- `cintel report`;
-- disambiguation for duplicate function names;
-- deterministic context prioritization and character budgeting;
-- function definition and declaration excerpts;
-- compiler defines and include paths in context;
-- callers, callees, types, globals, macros, comments, and relevant headers;
-- capability, confidence, and provenance notes;
-- repository inventory integrated with persisted build state;
-- selected-build and excluded-source reports;
-- compilation-unit report;
-- function, include, caller/callee, diagnostics, and capability indexes;
-- Markdown and JSON output through report-renderer adapters; and
-- report metadata and `CI-GEN-001` failures.
+- `cintel symbols`, `show function <name>`, `callers <name>`, `callees <name>`;
+- `cintel context function <name> [--budget N]` with deterministic
+  prioritization, character budgeting, definition/declaration excerpts,
+  compiler defines and include paths, callers, callees, globals, types,
+  macros, relevant headers, and capability/confidence/provenance notes;
+- `cintel report` regenerating every family in Markdown and JSON through the
+  report-renderer adapters, with per-format `GeneratedReportMetadata` and
+  `CI-GEN-001` failure diagnostics;
+- disambiguation for duplicate function names (candidate listing plus
+  `--file` selection, exit status 1);
+- the repository inventory integrated with persisted build state, fixing the
+  stale scan-only build-awareness wording; and
+- the complex fixture validator now enforces mandatory analysis findings
+  against the `symbol_index`, `call_graph`, `include_index`, and
+  `global_usage` JSON reports.
 
-Phase 6 should also fix the stale scan-only build-awareness wording identified
-by this audit.
+The `symbol_index` and `global_usage` report families extend the planned
+index list so the fixture's machine-readable expectations (globals, types,
+macros, global reads/writes) are fully validated.
 
 ### Phase 7: Optional GCC enrichment
 

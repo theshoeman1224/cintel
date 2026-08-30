@@ -266,11 +266,52 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
                 )
             self.assertEqual(0, build_code, build_stdout.getvalue())
 
+            analysis_stdout = io.StringIO()
+            with contextlib.redirect_stdout(analysis_stdout):
+                analyze_code = cintel_main(
+                    [
+                        "--repository",
+                        str(FIXTURE),
+                        "--output-directory",
+                        str(output_directory),
+                        "--build-config",
+                        "linux",
+                        "analyze",
+                    ]
+                )
+            self.assertEqual(0, analyze_code, analysis_stdout.getvalue())
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                report_code = cintel_main(
+                    [
+                        "--repository",
+                        str(FIXTURE),
+                        "--output-directory",
+                        str(output_directory),
+                        "report",
+                    ]
+                )
+            self.assertEqual(0, report_code)
+
+            def load_report(name: str) -> dict:
+                file_name = (
+                    "repository.json" if name == "repository_inventory" else f"{name}.json"
+                )
+                return json.loads(
+                    (output_directory / "reports" / file_name).read_text(
+                        encoding="utf-8"
+                    )
+                )
+
             envelope = {
-                "repository_report": json.loads(
-                    (output_directory / "reports/repository.json").read_text(encoding="utf-8")
-                ),
+                "repository_report": load_report("repository_inventory"),
                 "build_report": json.loads(build_stdout.getvalue()),
+                "analysis_report": {
+                    "symbol_index": load_report("symbol_index"),
+                    "call_graph": load_report("call_graph"),
+                    "include_index": load_report("include_index"),
+                    "global_usage": load_report("global_usage"),
+                },
             }
             actual = Path(directory) / "actual.json"
             actual.write_text(json.dumps(envelope), encoding="utf-8")

@@ -90,9 +90,9 @@ def validate(expected: dict[str, Any], actual: dict[str, Any], configuration: st
         elif entry.get("required"):
             result["missing"].append(entry["id"])
 
-    _validate_future_section(expected.get("expected_symbols", []), actual.get("symbols"), result)
-    _validate_future_section(
-        expected.get("expected_relationships", []), actual.get("relationships"), result
+    _validate_symbols(expected.get("expected_symbols", []), actual, result)
+    _validate_relationships(
+        expected.get("expected_relationships", []), actual, result, configuration
     )
 
     for entry in expected.get("expected_diagnostics", []):
@@ -105,6 +105,136 @@ def validate(expected: dict[str, Any], actual: dict[str, Any], configuration: st
         else:
             result["unsupported"].append(entry["id"] + " (diagnostic matcher pending target run)")
     return result
+
+
+def _analysis_sections(actual: dict[str, Any]) -> dict[str, list[dict[str, Any]]] | None:
+    """Return the Phase 6 JSON report sections, or None when not exported."""
+
+    analysis = actual.get("analysis_report")
+    if not isinstance(analysis, dict):
+        return None
+    return {
+        "symbol_index": analysis.get("symbol_index", {}).get("entries", []),
+        "call_graph": analysis.get("call_graph", {}).get("edges", []),
+        "include_index": analysis.get("include_index", {}).get("entries", []),
+        "global_usage": analysis.get("global_usage", {}).get("entries", []),
+    }
+
+
+def _symbol_kind_for_category(category: str) -> str | None:
+    if category.startswith(("FUNCTION", "HIGH_COMPLEXITY", "DIRECT_RECURSION")):
+        return "function"
+    if category.startswith("GLOBAL"):
+        return "variable"
+    if category.startswith("TYPE"):
+        return "type"
+    if category.startswith("MACRO"):
+        return "macro"
+    return None
+
+
+def _validate_symbols(
+    entries: list[dict[str, Any]],
+    actual: dict[str, Any],
+    result: dict[str, list[str]],
+) -> None:
+    sections = _analysis_sections(actual)
+    if sections is None:
+        _validate_future_section(entries, None, result)
+        return
+    symbols = sections["symbol_index"]
+    for entry in entries:
+        if entry.get("confidence") == "heuristic":
+            result["skipped_heuristic"].append(entry["id"])
+            continue
+        kind = _symbol_kind_for_category(entry.get("category", ""))
+        passed = any(
+            item.get("name") == entry.get("symbol")
+            and item.get("relative_path") == entry.get("source_path")
+            and (kind is None or item.get("kind") == kind)
+            for item in symbols
+        )
+        if passed:
+            result["passed"].append(entry["id"])
+        elif entry.get("required"):
+            result["missing"].append(entry["id"] + " (symbol not in analysis)")
+
+
+def _validate_relationships(
+    entries: list[dict[str, Any]],
+    actual: dict[str, Any],
+    result: dict[str, list[str]],
+    configuration: str,
+) -> None:
+    sections = _analysis_sections(actual)
+    if sections is None:
+        _validate_future_section(entries, None, result)
+        return
+    call_edges = sections["call_graph"]
+    includes = sections["include_index"]
+    usages = sections["global_usage"]
+    for entry in entries:
+        if entry.get("confidence") == "heuristic":
+            result["skipped_heuristic"].append(entry["id"])
+            continue
+        configurations = entry.get("build_configurations", [])
+        if configurations and configuration not in configurations:
+            continue
+        category = entry.get("category", "")
+        caller = entry.get("symbol")
+        callee = entry.get("related_symbol")
+        source = entry.get("source_path")
+        if category in ("DIRECT_CALL", "CONDITIONAL_CALL"):
+            # The conservative parser extracts the call; whether it was
+            # conditional compilation is not visible, so both categories
+            # match a resolved direct-call edge.
+            passed = any(
+                edge.get("caller") == caller
+                and edge.get("callee") == callee
+                and edge.get("caller_path") == source
+                and edge.get("resolution") == "confirmed_direct"
+                for edge in call_edges
+            )
+        elif category == "POSSIBLE_INDIRECT_CALL":
+            result["unsupported"].append(
+                entry["id"] + " (indirect dispatch is unresolved by design)"
+            )
+            continue
+        elif category == "INCLUDE_RELATIONSHIP":
+            passed = any(
+                item.get("including_path") == source
+                and _include_matches(item, callee)
+                for item in includes
+            )
+        elif category in ("GLOBAL_WRITE", "GLOBAL_READ"):
+            # The conservative parser records the usage without read/write
+            # direction, so both categories match a usage edge.
+            passed = any(
+                item.get("function") == caller
+                and item.get("variable") == callee
+                and item.get("function_path") == source
+                for item in usages
+            )
+        else:
+            result["unsupported"].append(entry["id"] + f" (no matcher for {category})")
+            continue
+        if passed:
+            result["passed"].append(entry["id"])
+        elif entry.get("required"):
+            result["missing"].append(entry["id"] + " (relationship not in analysis)")
+
+
+def _include_matches(item: dict[str, Any], spelling: str | None) -> bool:
+    if spelling is None:
+        return False
+    included = item.get("included_spelling") or ""
+    resolved = item.get("resolved_path") or ""
+    for candidate in (included, resolved):
+        if not candidate:
+            continue
+        if candidate == spelling or candidate.endswith(spelling) or spelling.endswith(candidate):
+            return True
+    return False
 
 
 def _validate_future_section(entries: list[dict[str, Any]], actual: Any, result: dict[str, list[str]]) -> None:

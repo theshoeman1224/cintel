@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from typing import Iterable
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def migrate(connection: sqlite3.Connection, current_version: int) -> None:
-    migrations = (_to_v1, _to_v2, _to_v3, _to_v4, _to_v5)
+    migrations = (_to_v1, _to_v2, _to_v3, _to_v4, _to_v5, _to_v6)
     for target_version, migration in enumerate(migrations, 1):
         if current_version < target_version:
             migration(connection)
@@ -212,4 +214,134 @@ def _to_v5(connection: sqlite3.Connection) -> None:
             ON source_relationships (kind);
         UPDATE schema_metadata SET value = '5' WHERE key = 'schema_version';
         """
+    )
+
+
+# Schema v6 adds query-projection columns over the v5 analysis tables. The
+# JSON payloads remain the source of truth; the columns exist so symbol and
+# call-graph queries can run in SQL without materializing every analysis.
+_SYMBOL_DEFINITION_KINDS = ("function", "variable", "type")
+
+_RELATIONSHIP_PROJECTION_COLUMNS = (
+    "caller_id",
+    "callee_id",
+    "callee_spelling",
+    "function_id",
+    "variable_id",
+    "variable_spelling",
+    "source_file_id",
+    "resolved_file_id",
+)
+
+
+def _to_v6(connection: sqlite3.Connection) -> None:
+    _add_columns(
+        connection,
+        "source_symbols",
+        (
+            ("repository_id", "TEXT"),
+            ("repository_file_id", "TEXT"),
+            ("is_definition", "INTEGER"),
+        ),
+    )
+    _add_columns(
+        connection,
+        "source_relationships",
+        (
+            ("repository_id", "TEXT"),
+            ("repository_file_id", "TEXT"),
+            *((name, "TEXT") for name in _RELATIONSHIP_PROJECTION_COLUMNS),
+        ),
+    )
+    _backfill_symbol_projections(connection)
+    _backfill_relationship_projections(connection)
+    connection.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS source_symbols_repository_name_idx
+            ON source_symbols (repository_id, kind, name);
+        CREATE INDEX IF NOT EXISTS source_symbols_definition_idx
+            ON source_symbols (repository_id, name, is_definition);
+        CREATE INDEX IF NOT EXISTS source_relationships_repository_kind_idx
+            ON source_relationships (repository_id, kind);
+        CREATE INDEX IF NOT EXISTS source_relationships_caller_idx
+            ON source_relationships (caller_id);
+        CREATE INDEX IF NOT EXISTS source_relationships_callee_idx
+            ON source_relationships (callee_id);
+        UPDATE schema_metadata SET value = '6' WHERE key = 'schema_version';
+        """
+    )
+
+
+def _add_columns(
+    connection: sqlite3.Connection,
+    table: str,
+    columns: Iterable[tuple[str, str]],
+) -> None:
+    existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+    for name, declaration in columns:
+        if name not in existing:
+            connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN {name} {declaration}"
+            )
+
+
+def _backfill_symbol_projections(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """
+        SELECT s.analysis_id, s.id, s.kind, s.payload,
+               r.repository_id, r.repository_file_id
+        FROM source_symbols AS s
+        JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+        """
+    ).fetchall()
+    updates = []
+    for analysis_id, symbol_id, kind, payload, repository_id, repository_file_id in rows:
+        data = json.loads(payload)
+        is_definition = (
+            int(bool(data["is_definition"]))
+            if kind in _SYMBOL_DEFINITION_KINDS and "is_definition" in data
+            else None
+        )
+        updates.append(
+            (repository_id, repository_file_id, is_definition, analysis_id, symbol_id)
+        )
+    connection.executemany(
+        """
+        UPDATE source_symbols
+        SET repository_id = ?, repository_file_id = ?, is_definition = ?
+        WHERE analysis_id = ? AND id = ?
+        """,
+        updates,
+    )
+
+
+def _backfill_relationship_projections(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """
+        SELECT s.analysis_id, s.id, s.payload,
+               r.repository_id, r.repository_file_id
+        FROM source_relationships AS s
+        JOIN source_analysis_runs AS r ON r.id = s.analysis_id
+        """
+    ).fetchall()
+    updates = []
+    for analysis_id, relationship_id, payload, repository_id, repository_file_id in rows:
+        data = json.loads(payload)
+        updates.append(
+            (
+                repository_id,
+                repository_file_id,
+                *(data.get(name) for name in _RELATIONSHIP_PROJECTION_COLUMNS),
+                analysis_id,
+                relationship_id,
+            )
+        )
+    connection.executemany(
+        f"""
+        UPDATE source_relationships
+        SET repository_id = ?, repository_file_id = ?,
+            {', '.join(f'{name} = ?' for name in _RELATIONSHIP_PROJECTION_COLUMNS)}
+        WHERE analysis_id = ? AND id = ?
+        """,
+        updates,
     )

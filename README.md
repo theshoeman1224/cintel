@@ -10,8 +10,8 @@ discovery, incremental SHA-256 hashing, GNU Make dry-run build discovery,
 compiler-command normalization, validated input artifacts, resumable
 workflow state, SQLite state, conservative per-file C symbol/include/call
 extraction with deterministic cross-file resolution, incremental `cintel
-analyze`, deterministic Markdown/JSON inventory reports, configuration, and
-dependency composition.
+analyze`, symbol/call-graph query commands, deterministic Markdown/JSON
+inventory reports, configuration, and dependency composition.
 
 It does not send source code externally. AI is disabled by default, and the
 deterministic analysis architecture does not depend on an AI model.
@@ -137,9 +137,81 @@ cintel --repository ./example analyze
 cintel --repository ./example report
 ```
 
-`scan`, guided recovery, the three `build` subcommands, and `analyze` are
-implemented. General reports in the example above are planned behavior and
-are deliberately not exposed as successful no-ops.
+`scan`, guided recovery, the three `build` subcommands, `analyze`, the
+symbol/call-graph queries, `context function`, and `report` are implemented.
+
+## Symbol and relationship queries
+
+After `analyze`, the stored index answers read-only queries. Ambiguous
+function names (several definitions) list their candidates and exit with
+status 1; rerun with `--file <repository-relative-path>` to choose one:
+
+```bash
+cintel --repository ./example symbols                       # every stored symbol
+cintel --repository ./example symbols --kind function       # functions only
+cintel --repository ./example symbols project_value         # exact name
+cintel --repository ./example show function project_value   # definition, callers, callees, declarations
+cintel --repository ./example show function helper --file src/util.c
+cintel --repository ./example callers project_value
+cintel --repository ./example callees main
+```
+
+`--json` renders every query as machine-readable output. Empty results exit
+with status 1. Callers show the call site inside each calling function;
+callees show the callee's definition location when the call resolved.
+
+## Function context packages
+
+`cintel context function <name> [--budget N] [--file <path>]` builds a
+deterministic, budgeted context package for one function and writes it under
+`.code-intelligence/context/<name>__<path-slug>.md`:
+
+- sections are filled in a fixed priority order — definition excerpt,
+  declarations, preceding comment, callers, callees, globals used, local
+  types, file macros, relevant headers, compiler defines and include paths,
+  and capability/provenance notes;
+- the first section that does not fit the character budget (default 8000)
+  ends the package; the definition excerpt alone may be truncated, and an
+  `Omitted sections` note lists whatever was dropped;
+- the same stored state and budget always produce the same file content;
+- the CLI prints the written path, budget usage, and section list.
+
+```bash
+cintel --repository ./example context function project_value
+cintel --repository ./example context function helper --budget 4000 --file src/util.c
+```
+
+## Reports
+
+`cintel report` regenerates every report family from persisted state —
+Markdown and JSON side by side under `.code-intelligence/reports/` (the
+repository inventory stays at its conventional locations):
+
+- `repository.md` and `reports/repository.json` — repository inventory
+  integrated with persisted build state (configurations, unit counts,
+  analyzed files);
+- `reports/build_selection.{md,json}` — selected sources and excluded
+  C sources per build configuration;
+- `reports/compilation_units.{md,json}` — units with configuration, source,
+  compiler, define, and include-path counts;
+- `reports/function_index.{md,json}` — every analyzed function with
+  definition/declaration state, linkage, and location;
+- `reports/call_graph.{md,json}` — deduplicated direct-call edges with
+  call-site lines, callee definitions, and explicit unresolved edges;
+- `reports/include_index.{md,json}` — include directives with resolved
+  targets;
+- `reports/diagnostics_index.{md,json}` and
+  `reports/capability_index.{md,json}` — every diagnostic and capability
+  record with provenance classification.
+
+Every written file is recorded in the generated-reports metadata (name,
+format, path, SHA-256). Failures are reported as `CI-GEN-001` diagnostics
+and never abort the remaining families. Apart from the timestamped
+inventory, the same stored state always produces byte-identical reports.
+
+```bash
+cintel --repository ./example report
+```
 
 ## Source analysis
 
@@ -304,9 +376,10 @@ rejected explicitly.
 
 The Phase 1 foundation, Phase 2 repository inventory, Phase 3 Make build
 discovery, Phase 4 guided recovery, the Phase 5A conservative
-parser/persistence foundation, and the Phase 5B source-analysis workflow
-(`cintel analyze`) are implemented. Query commands, broader reports, context
-packages, and GCC enrichment belong to subsequent vertical slices.
+parser/persistence foundation, the Phase 5B source-analysis workflow
+(`cintel analyze`), and all Phase 6 query commands, function context
+packages, and report families are implemented. Optional GCC enrichment
+belongs to the final vertical slice.
 
 Even after those slices, conservative analysis will have known limitations:
 
