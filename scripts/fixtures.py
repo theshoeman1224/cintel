@@ -38,6 +38,10 @@ INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install.py"
 OPERATIONS = ("setup", "verify", "clean", "run")
 DEFAULT_TIMEOUT = 600
 
+# Characters that must never reach an interpreter invocation from external
+# input such as the --python CLI option. Valid interpreters never need them.
+INTERPRETER_FORBIDDEN_CHARACTERS = set(";&|`$<>(){}[]!*?~\"'\\")
+
 
 class FixtureError(RuntimeError):
     """Raised when a fixture operation fails."""
@@ -85,6 +89,13 @@ class FixtureContext:
 
     def cintel(self, arguments: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
         """Run ``python -m cintel`` with the src layout on PYTHONPATH."""
+        if (
+            set(self.python) & INTERPRETER_FORBIDDEN_CHARACTERS
+            or not os.access(self.python, os.X_OK)
+        ):
+            raise FixtureError(
+                f"refusing to run unvalidated interpreter: {self.python!r}"
+            )
         environment = {"PYTHONPATH": str(self.repo_root / "src")}
         return self.run(
             [self.python, "-m", "cintel", *arguments],
@@ -194,8 +205,20 @@ def load_module(path: Path, name: str) -> ModuleType | None:
 
 
 def resolve_python(explicit: str | None) -> str:
+    """Validate and resolve the interpreter used for every subprocess call.
+
+    The ``--python`` CLI value is external input: it must name an existing
+    executable before it may reach a subprocess. ``shutil.which`` resolves
+    bare interpreter names against PATH and returns None for anything that
+    is missing or not executable.
+    """
     if explicit:
-        return explicit
+        resolved = shutil.which(explicit)
+        if resolved is None:
+            raise FixtureError(
+                f"--python interpreter not found or not executable: {explicit!r}"
+            )
+        return resolved
     venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
     if venv_python.is_file():
         return str(venv_python)
@@ -204,6 +227,13 @@ def resolve_python(explicit: str | None) -> str:
 
 def ensure_environment(python: str) -> None:
     """Bootstrap the environment the same way a user would (start.sh flow)."""
+    if (
+        set(python) & INTERPRETER_FORBIDDEN_CHARACTERS
+        or not os.access(python, os.X_OK)
+    ):
+        raise FixtureError(
+            f"refusing to run unvalidated interpreter: {python!r}"
+        )
     if not INSTALL_SCRIPT.is_file():
         raise FixtureError(f"installer is missing: {INSTALL_SCRIPT}")
     completed = subprocess.run(
@@ -227,7 +257,11 @@ def select_fixtures(fixtures: list[Fixture], target: str) -> list[Fixture]:
 
 
 def apply_operation(fixtures: list[Fixture], operation: str, options: argparse.Namespace) -> int:
-    python = resolve_python(options.python)
+    try:
+        python = resolve_python(options.python)
+    except FixtureError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     failures: list[str] = []
     for fixture in fixtures:
         print(f"\n=== {operation}: {fixture.name} ===")
