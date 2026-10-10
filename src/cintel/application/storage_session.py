@@ -12,8 +12,8 @@ def storage_session(
     factory: Callable[[Path], AnalysisStorage], database_path: str | Path
 ) -> Iterator[AnalysisStorage]:
     storage = factory(Path(database_path))
-    storage.initialize()
     try:
+        storage.initialize()
         yield storage
     finally:
         storage.close()

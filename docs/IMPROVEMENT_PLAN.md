@@ -58,26 +58,45 @@ source files, 200 tests green.
 
 ## Phase 1: failure-path tests
 
-Status: pending
+Status: complete (2026-10-10)
 
-Pin current correct behavior and describe desired behavior for Phase 2 fixes.
+Landed:
 
-- New `tests/integration/test_cli_contracts.py` covering the exit-code
-  matrix: missing repository, malformed `--config`, unwritable output
-  directory, corrupt SQLite, too-new schema, and out-of-order `report`,
-  `symbols`, `context`, and `build units`.
-- Renderer tests for the seven untested presentation functions:
+- `tests/integration/test_cli_contracts.py` (11 tests): missing repository for
+  `scan`, `doctor`, and `report`; malformed `--config`; corrupt SQLite; a
+  too-new schema; doctor's unwritable-output diagnostic; and out-of-order
+  `report`, `symbols`, `context`, and `build units`.
+- `tests/unit/test_presentation.py` gained 20 tests covering
   `render_initialization`, `render_scan`, `render_symbols`,
-  `render_function_detail` including the candidates branch, `render_call_sites`,
-  `render_context_result`, and `render_report_run`, plus `_json` edge cases.
-- Error-branch tests for the artifact provider, validation, guidance
-  fallbacks, doctor missing-tool paths, and serialization.
-- `tests/unit/test_architecture.py` asserting import direction: the domain
-  imports no adapters, application, or CLI modules; only
-  `adapters/commands/subprocess_runner.py` imports `subprocess`; adapters do
-  not import the CLI.
+  `render_function_detail` including the candidates and empty-relationship
+  branches, `render_call_sites`, `render_context_result`, `render_report_run`,
+  and the `_json` helpers.
+- `tests/unit/test_input_artifacts.py` gained 9 tests: missing source,
+  unreadable source, copy failure, unreadable preserved file, missing
+  preserved file, changed source, and the validation failure and warning
+  branches.
+- `tests/unit/test_guidance.py` gained 6 tests: the file-list fallback,
+  default make names without a configuration, missing-source search
+  instructions, both renderer error branches, and the empty-instruction text.
+- `tests/unit/test_doctor.py` gained a missing-tool test using a new
+  `UnavailableFakeRunner`.
+- `tests/unit/test_serialization.py` gained unsupported-kind and
+  `json_default` error tests.
+- `tests/unit/test_architecture.py` (3 tests) enforces import direction:
+  layers import only inward, only the command runner imports `subprocess`, and
+  only storage modules import `sqlite3`.
+- One source fix, surfaced by the corrupt-database test:
+  `application/storage_session.py` now closes the storage adapter when
+  `initialize` raises. The old code leaked an open `sqlite3.Connection` on
+  every failed initialize.
 
-Verification: suite green, no source changes.
+The probes written for these tests corrected two audit findings: `analyze` on
+a missing repository raises an uncaught `IntegrityError` rather than exiting
+0, and an unwritable output directory crashes `scan` with an uncaught
+`PermissionError`. Both are recorded in the audit and targeted by Phase 2.
+
+Verification: 253 tests pass (210 unit, 43 integration), ruff and mypy clean,
+`tests/fixtures/complex_c_project` untouched.
 
 ## Phase 2: user-friendliness fixes
 
@@ -85,8 +104,13 @@ Status: pending
 
 Each fix lands with a test that failed before it.
 
-- `analyze` propagates scan errors, exits 2, and never opens storage for a
-  missing root (`application/analysis.py:100`, `application/scanning.py:46-50`).
+- `analyze` on a missing or unscannable root propagates the scan error, exits
+  2, and never opens storage. Today it raises an uncaught `IntegrityError`
+  after creating the workspace (`application/analysis.py:100`,
+  `application/scanning.py:46-50`).
+- Workspace write failures produce a `StorageError` and exit 2 instead of an
+  uncaught `PermissionError`; `SQLiteAnalysisStorage.initialize` catches
+  `OSError` as well as `sqlite3.Error` (`adapters/storage/sqlite.py:61-80`).
 - Split not-found from ambiguous. A new `FunctionNotFound` result makes
   `show function`, `callers`, `callees`, and `context function` tell an empty
   index apart from duplicate definitions, with a hint to run `cintel analyze`

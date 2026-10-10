@@ -4,7 +4,11 @@ from pathlib import Path
 
 from cintel.application.doctor import DoctorService
 from cintel.configuration.loader import default_config
-from cintel.domain.models import CommandRequest, CommandResult
+from cintel.domain.models import (
+    CapabilityStatus,
+    CommandRequest,
+    CommandResult,
+)
 
 
 class SuccessfulFakeRunner:
@@ -13,6 +17,18 @@ class SuccessfulFakeRunner:
             standard_output=f"{Path(request.arguments[0]).name} version 1\n",
             standard_error="",
             exit_code=0,
+            duration_seconds=0.01,
+            executed_command=request.arguments,
+            effective_working_directory=request.working_directory,
+        )
+
+
+class UnavailableFakeRunner:
+    def run(self, request: CommandRequest) -> CommandResult:
+        return CommandResult(
+            standard_output="",
+            standard_error=f"{Path(request.arguments[0]).name}: not found",
+            exit_code=127,
             duration_seconds=0.01,
             executed_command=request.arguments,
             effective_working_directory=request.working_directory,
@@ -51,3 +67,29 @@ class DoctorTests(unittest.TestCase):
             missing = Path(directory) / "not-present"
             report = DoctorService(SuccessfulFakeRunner()).inspect(default_config(missing))
             self.assertIn("CI-REPO-001", {item.code for item in report.diagnostics})
+
+    def test_missing_tools_report_reduced_capabilities_and_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_text("all:\n\t@true\n", encoding="utf-8")
+            report = DoctorService(UnavailableFakeRunner()).inspect(
+                default_config(root)
+            )
+        codes = {item.code for item in report.diagnostics}
+        self.assertIn("CI-BUILD-001", codes)
+        self.assertIn("CI-COMP-001", codes)
+
+        make_capability = next(
+            item for item in report.capabilities if item.name == "make_build_discovery"
+        )
+        gcc_capability = next(
+            item for item in report.capabilities if item.name == "gcc_enrichment"
+        )
+        self.assertEqual(CapabilityStatus.UNAVAILABLE, make_capability.status)
+        self.assertEqual(CapabilityStatus.UNAVAILABLE, gcc_capability.status)
+
+        make_status = next(item for item in report.tools if item.name == "make")
+        self.assertFalse(make_status.available)
+        self.assertTrue(
+            any("cintel setup" in action for action in report.recommended_actions)
+        )

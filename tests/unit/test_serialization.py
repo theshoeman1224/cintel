@@ -336,5 +336,27 @@ class DiagnosticPersistenceTests(unittest.TestCase):
             storage.close()
 
 
+class SerializationErrorTests(unittest.TestCase):
+    def test_json_default_rejects_unknown_types(self) -> None:
+        with self.assertRaises(TypeError) as caught:
+            json_default(object())
+        self.assertIn("Cannot serialize object", str(caught.exception))
+
+    def test_source_symbol_from_dict_rejects_unknown_kind(self) -> None:
+        payload = {
+            "id": "symbol-1",
+            "name": "value",
+            "location": {"path": "src/main.c", "line": 1},
+        }
+        with self.assertRaises(ValueError) as caught:
+            source_symbol_from_dict("unknown", payload)
+        self.assertIn("Unsupported source symbol kind", str(caught.exception))
+
+    def test_source_relationship_from_dict_rejects_unknown_kind(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            source_relationship_from_dict("unknown", {})
+        self.assertIn("Unsupported source relationship kind", str(caught.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -227,12 +227,14 @@ manager.
 
 ### Confirmed bugs
 
-1. `cintel analyze` on a misspelled repository path exits 0, prints
-   "Source analysis: completed", and creates `.code-intelligence/index.sqlite`
-   under the typo path. `application/analysis.py:100` discards the scan
-   result's diagnostics, and the missing-root path at
-   `application/scanning.py:46-50` supplies the only error. `doctor` and
-   `report` fail correctly, so behavior is inconsistent across commands.
+1. `cintel analyze` on a misspelled repository path raises an uncaught
+   `sqlite3.IntegrityError` (`FOREIGN KEY constraint failed`) and creates
+   `.code-intelligence/index.sqlite` under the typo path.
+   `application/analysis.py:100` discards the scan result's diagnostics, the
+   missing-root path at `application/scanning.py:46-50` supplies the only
+   error, and the workflow-state write then references a repository row that
+   was never stored. `doctor` and `report` fail correctly, so behavior is
+   inconsistent across commands.
 2. A nonexistent function name prints
    `Ambiguous function name: foo (0 definitions)`. `_select_definition` at
    `application/queries.py:320-342` returns `None` for zero definitions and for
@@ -268,6 +270,10 @@ manager.
     exits the whole script when Make discovery fails (lines 198-202), and
     swallows analyze and report failures (lines 241 and 246) while still
     printing "Done".
+12. `cintel scan --output-directory <unwritable>` raises an uncaught
+    `PermissionError` from `SQLiteAnalysisStorage.initialize`
+    (`adapters/storage/sqlite.py:63`) before any diagnostic can be produced.
+    `doctor` reports the same condition correctly as a structured error.
 
 ### Complexity
 
