@@ -172,7 +172,7 @@ case "$EVIDENCE" in
     1)
         prompt_value "Makefile (relative to repository)" "Makefile"
         MAKEFILE="$REPLY"
-        prompt_value "Make target" "all"
+        prompt_value "Make target (blank uses the Makefile default goal)" ""
         TARGET="$REPLY"
         prompt_value "Build configuration name" "$BUILD_CONFIG"
         BUILD_CONFIG="$REPLY"
@@ -184,7 +184,10 @@ case "$EVIDENCE" in
         done
         echo
         echo "Evaluated command (read-only; sets no variables):"
-        make_eval_args=(-n -B -f "$MAKEFILE" "$TARGET")
+        make_eval_args=(-n -B -f "$MAKEFILE")
+        if [[ -n "$TARGET" ]]; then
+            make_eval_args+=("$TARGET")
+        fi
         for var in "${MAKE_VARS[@]+"${MAKE_VARS[@]}"}"; do
             make_eval_args+=("$var")
         done
@@ -198,9 +201,12 @@ case "$EVIDENCE" in
             echo "Re-run later with choice 1 or import saved evidence with choice 2."
         else
             MAKE_ARGS=(
-                --makefile "$MAKEFILE" --target "$TARGET"
+                --makefile "$MAKEFILE"
                 --build-config "$BUILD_CONFIG" --non-interactive
             )
+            if [[ -n "$TARGET" ]]; then
+                MAKE_ARGS+=(--target "$TARGET")
+            fi
             for var in "${MAKE_VARS[@]+"${MAKE_VARS[@]}"}"; do
                 MAKE_ARGS+=(--make-var "$var")
             done
@@ -213,11 +219,12 @@ case "$EVIDENCE" in
                 ANALYZE_WITH_BUILD=false
             else
                 echo "$discovery_output"
-                if grep -q "^Compiler invocations: 0" <<<"$discovery_output"; then
+                if grep -qE "^Compiler invocations: 0|^Compilation units: 0" <<<"$discovery_output"; then
                     echo
-                    echo "hint: no compiler commands were found. The target may not exist."
-                    echo "      Try another target, e.g.: make -n -f $MAKEFILE <target>"
+                    echo "hint: no compilation units were found; analysis will be file-scoped."
+                    echo "      The target may not exist. Try: make -n -B -f $MAKEFILE <target>"
                     echo "      Saved dry-run text can also be imported via choice 2."
+                    ANALYZE_WITH_BUILD=false
                 fi
             fi
         fi
@@ -235,7 +242,7 @@ case "$EVIDENCE" in
         INPUT_TYPE="$REPLY"
         echo
         MAKE_ARGS=(--build-config "$BUILD_CONFIG" --input-file "$INPUT_FILE" --input-type "$INPUT_TYPE")
-        if "$PYTHON" -m cintel --repository "$REPO" resume "${MAKE_ARGS[@]}"; then
+        if "$PYTHON" -m cintel --repository "$REPO" "${MAKE_ARGS[@]}" resume; then
             ANALYZE_WITH_BUILD=true
         else
             echo
@@ -250,6 +257,19 @@ case "$EVIDENCE" in
         echo "Unknown choice '$EVIDENCE'; skipping build evidence." >&2
         ;;
 esac
+
+if [[ "$ANALYZE_WITH_BUILD" == true ]]; then
+    UNITS_STATUS=0
+    units_output="$("$PYTHON" -m cintel --repository "$REPO" \
+        --build-config "$BUILD_CONFIG" build units 2>&1)" || UNITS_STATUS=$?
+    if [[ "$UNITS_STATUS" != 0 ]] \
+        || grep -q "No compilation units found" <<<"$units_output"; then
+        echo
+        echo "No compilation units are available from the supplied evidence;"
+        echo "continuing with file-scoped analysis."
+        ANALYZE_WITH_BUILD=false
+    fi
+fi
 
 ANALYZE_ARGS=(--repository "$REPO")
 if [[ "$ANALYZE_WITH_BUILD" == true ]]; then
@@ -299,8 +319,11 @@ if $ANALYZE_WITH_BUILD; then
     echo "  cintel --repository \"$REPO\" --build-config \"$BUILD_CONFIG\" build units"
     echo "  cintel --repository \"$REPO\" --build-config \"$BUILD_CONFIG\" build show src/some_file.c"
 else
-    echo "  Re-run with Make evidence to get build-aware analysis:"
-    echo "    ./start.sh   (choose option 1)"
+    echo "  cintel --repository \"$REPO\" symbols"
+    echo "  cintel --repository \"$REPO\" show function <name>"
+    echo "  Re-run with Make evidence that produces compilation units to get"
+    echo "  build-aware queries:"
+    echo "    ./start.sh   (choose option 1 or 2)"
 fi
 echo "  cat \"$REPO/.code-intelligence/REQUIRED_INPUTS.md\"   # missing-evidence guidance"
 echo
