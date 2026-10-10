@@ -1,3 +1,5 @@
+"""Markdown rendering for REQUIRED_INPUTS.md."""
+
 from __future__ import annotations
 
 import shlex
@@ -7,6 +9,7 @@ from cintel.domain.models import CommandInstruction
 
 
 class MarkdownGuidanceRenderer:
+    """Render required-input instructions as Markdown."""
     def render(self, report_name: str, data: Any) -> str:
         if report_name != "required_inputs":
             raise ValueError(f"Unsupported guidance report: {report_name}")

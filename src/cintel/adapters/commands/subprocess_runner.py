@@ -16,6 +16,7 @@ from cintel.domain.models import (
 
 
 class SubprocessCommandRunner:
+    """Run commands with argument lists and shell=False."""
     def run(self, request: CommandRequest) -> CommandResult:
         environment = os.environ.copy()
         environment.update(dict(request.environment_overrides))

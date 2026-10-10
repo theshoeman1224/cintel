@@ -1,3 +1,5 @@
+"""Use-case orchestration between the CLI and the ports."""
+
 from cintel.application.doctor import DoctorService
 from cintel.application.initialization import InitializationService
 from cintel.application.recovery import GuidedRecoveryService, parse_path_placeholders

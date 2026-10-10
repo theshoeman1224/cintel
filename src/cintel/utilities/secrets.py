@@ -1,3 +1,5 @@
+"""Secret detection and redaction for command provenance."""
+
 from __future__ import annotations
 
 import re

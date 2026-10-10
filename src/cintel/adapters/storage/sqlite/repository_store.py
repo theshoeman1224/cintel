@@ -22,7 +22,9 @@ from cintel.domain.models import (
 
 class RepositoryStore(StoreBase):
 
+    """Repository, file, diagnostic, and capability persistence."""
     def save_repository(self, repository: Repository) -> None:
+        """Insert or update the repository row."""
         self._connect().execute(
             """
             INSERT INTO repositories (id, root, name, created_at)
@@ -39,6 +41,7 @@ class RepositoryStore(StoreBase):
         self._connect().commit()
 
     def get_repository(self, repository_id: str) -> Repository | None:
+        """Return the stored repository, or None when absent."""
         row = self._connect().execute(
             "SELECT id, root, name, created_at FROM repositories WHERE id = ?",
             (repository_id,),
@@ -53,6 +56,7 @@ class RepositoryStore(StoreBase):
         )
 
     def list_repository_files(self, repository_id: str) -> tuple[RepositoryFile, ...]:
+        """Files for a repository, ordered by relative path."""
         rows = self._connect().execute(
             """
             SELECT id, repository_id, relative_path, absolute_path, kind, size,
@@ -80,6 +84,7 @@ class RepositoryStore(StoreBase):
     def replace_repository_files(
         self, repository_id: str, files: tuple[RepositoryFile, ...]
     ) -> None:
+        """Upsert the inventory and delete rows no longer present."""
         connection = self._connect()
         incoming_ids = {item.id for item in files}
         existing_ids = {
@@ -128,6 +133,7 @@ class RepositoryStore(StoreBase):
         diagnostics: tuple[Diagnostic, ...],
         context: str = "general",
     ) -> None:
+        """Replace diagnostics for one context key."""
         connection = self._connect()
         replace_diagnostics(connection, repository_id, diagnostics, context)
         connection.commit()
@@ -135,6 +141,7 @@ class RepositoryStore(StoreBase):
     def save_capabilities(
         self, repository_id: str, capabilities: tuple[AnalysisCapability, ...]
     ) -> None:
+        """Replace all capability records for the repository."""
         connection = self._connect()
         connection.execute("DELETE FROM capabilities WHERE repository_id = ?", (repository_id,))
         connection.executemany(
@@ -158,6 +165,7 @@ class RepositoryStore(StoreBase):
     def list_capabilities(
         self, repository_id: str
     ) -> tuple[AnalysisCapability, ...]:
+        """Capabilities ordered by name."""
         rows = self._connect().execute(
             """
             SELECT name, status, reason, evidence FROM capabilities
@@ -179,6 +187,7 @@ class RepositoryStore(StoreBase):
     def list_diagnostics(
         self, repository_id: str, context_prefix: str | None = None
     ) -> tuple[Diagnostic, ...]:
+        """Diagnostics in insertion order, optionally filtered by context prefix."""
         return read_diagnostics(
             self._connect(), repository_id, context_prefix=context_prefix
         )

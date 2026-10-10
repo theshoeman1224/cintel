@@ -1,3 +1,5 @@
+"""Argument parsing, dispatch, and exit-code policy."""
+
 from __future__ import annotations
 
 import argparse
@@ -33,6 +35,7 @@ from cintel.utilities.secrets import redact_assignment_arguments
 
 
 class ExitCode(IntEnum):
+    """Process exit codes: success, no match, failure."""
     SUCCESS = 0
     NO_MATCH = 1
     FAILURE = 2
@@ -49,6 +52,7 @@ def _positive_int(value: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser with every command and option."""
     parser = argparse.ArgumentParser(
         prog="cintel",
         description="Offline-first intelligence for legacy C repositories.",
@@ -240,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Parse arguments, dispatch one handler, and map errors to exit codes."""
     parser = build_parser()
     args = parser.parse_args(argv)
     app = create_application()

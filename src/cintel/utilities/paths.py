@@ -1,3 +1,5 @@
+"""Path normalization, repository ids, and exclusion matching."""
+
 from __future__ import annotations
 
 import fnmatch

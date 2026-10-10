@@ -226,6 +226,8 @@ class ConservativeCSourceParser:
             )
 
         locations = _Locations(source, repository_file.relative_path)
+        # Mask comments and literals before scanning; offsets are preserved so
+        # every extracted symbol keeps its original location.
         masked_result = mask_c_non_code(source)
         diagnostics = [
             _issue_diagnostic(issue, repository_file, locations)

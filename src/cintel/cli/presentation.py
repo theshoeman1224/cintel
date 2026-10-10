@@ -1,3 +1,5 @@
+"""Text and JSON rendering for CLI results."""
+
 from __future__ import annotations
 
 import json
@@ -29,6 +31,7 @@ from cintel.domain.models import (
 
 
 def render_initialization(result: InitializationResult, as_json: bool = False) -> str:
+    """Render workspace initialization as text or JSON."""
     if as_json:
         return _json(result)
     lines = [
@@ -45,6 +48,7 @@ def render_initialization(result: InitializationResult, as_json: bool = False) -
 
 
 def render_doctor(report: DoctorReport, as_json: bool = False) -> str:
+    """Render environment diagnostics as text or JSON."""
     if as_json:
         return _json(report)
     lines = [
@@ -81,6 +85,7 @@ def render_doctor(report: DoctorReport, as_json: bool = False) -> str:
 
 
 def render_scan(result: ScanWorkflowResult, as_json: bool = False) -> str:
+    """Render a scan result as text or JSON."""
     if as_json:
         return _json(result)
     scan = result.scan
@@ -101,6 +106,7 @@ def render_scan(result: ScanWorkflowResult, as_json: bool = False) -> str:
 def render_build_discovery(
     result: BuildDiscoveryResult, as_json: bool = False
 ) -> str:
+    """Render a build discovery result as text or JSON."""
     if as_json:
         return _json(result)
     lines = [
@@ -129,6 +135,7 @@ def render_build_discovery(
 def render_compilation_units(
     units: tuple[CompilationUnit, ...], as_json: bool = False
 ) -> str:
+    """Render compilation units as text or JSON."""
     if as_json:
         return _json(units)
     if not units:
@@ -165,6 +172,7 @@ def render_compilation_units(
 
 
 def render_analysis(result: AnalysisRunSummary, as_json: bool = False) -> str:
+    """Render an analysis summary as text or JSON."""
     if as_json:
         return _json(result)
     lines = [
@@ -186,6 +194,7 @@ def render_analysis(result: AnalysisRunSummary, as_json: bool = False) -> str:
 
 
 def render_recovery(result: RecoveryResult, as_json: bool = False) -> str:
+    """Render a recovery result as text or JSON."""
     if as_json:
         return _json(result)
     lines = [
@@ -211,6 +220,7 @@ def render_recovery(result: RecoveryResult, as_json: bool = False) -> str:
 
 
 def render_symbols(result: SymbolsResult, as_json: bool = False) -> str:
+    """Render symbol query results as text or JSON."""
     if as_json:
         return _json(result)
     if not result.entries:
@@ -227,6 +237,7 @@ def render_function_detail(
     result: FunctionDetail | FunctionCandidates | FunctionNotFound,
     as_json: bool = False,
 ) -> str:
+    """Render a function, its candidates, or a not-found result."""
     if as_json:
         return _json(result)
     if isinstance(result, FunctionNotFound):
@@ -253,6 +264,7 @@ def render_function_detail(
 
 
 def render_call_sites(name: str, sites, as_json: bool = False) -> str:
+    """Render caller or callee call sites."""
     if as_json:
         return _json(sites)
     if not sites:
@@ -301,6 +313,7 @@ def render_context_result(
     result: ContextResult | FunctionCandidates | FunctionNotFound,
     as_json: bool = False,
 ) -> str:
+    """Render a context package result or candidates."""
     if as_json:
         return _json(result)
     if isinstance(result, FunctionNotFound):
@@ -327,6 +340,7 @@ def render_context_result(
 
 
 def render_report_run(result: ReportRunResult, as_json: bool = False) -> str:
+    """Render generated reports and generation failures."""
     if as_json:
         return _json(result)
     lines = [

@@ -23,6 +23,7 @@ def analysis_capabilities(
     unreachable: int,
     recursive_count: int,
 ) -> tuple[AnalysisCapability, ...]:
+    """Build the capability records reported by one analysis run."""
     analysis_status = _analysis_status(target_count, failed)
     call_status = _call_status(resolved_calls, unresolved_calls)
     graph_status = (
@@ -86,4 +87,5 @@ def _call_status(resolved_calls: int, unresolved_calls: int) -> CapabilityStatus
 
 
 def definition_graph_exists(entry_points: int, unreachable: int, recursive: int) -> bool:
+    """True when the call graph has any node worth reporting."""
     return bool(entry_points or unreachable or recursive)

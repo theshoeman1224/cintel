@@ -1,3 +1,5 @@
+"""Conservative source analysis with incremental reuse and deterministic resolution."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, ItemsView
@@ -114,6 +116,7 @@ class SourceAnalysisService:
         build_configuration_name: str | None = None,
         force: bool = False,
     ) -> AnalysisRunSummary:
+        """Parse selected targets, resolve relationships, and persist the run."""
         scan_result = self._scanner.scan(app_config)
         blocking = [
             item
@@ -453,6 +456,9 @@ def _rebuild_relationships(
 ) -> tuple[list, bool]:
     relationships = []
     result_changed = False
+    # Resolution is monotonic: only unresolved calls are retried, so an
+    # already-resolved call keeps its target when a later pass introduces a
+    # competing definition. --force-analysis rebuilds from scratch instead.
     for relationship in result.relationships:
         new_relationship = relationship
         if (

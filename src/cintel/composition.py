@@ -1,3 +1,5 @@
+"""Composition root: builds every adapter and service per invocation."""
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +39,7 @@ from cintel.application.reports import ReportService
 
 @dataclass(frozen=True, slots=True)
 class Application:
+    """Constructed services and factories for one CLI invocation."""
     doctor: DoctorService
     initialization: InitializationService
     scanning: RepositoryScanService
@@ -51,6 +54,7 @@ class Application:
 
 
 def create_application() -> Application:
+    """Wire every adapter and service; no global instances."""
     command_runner = SubprocessCommandRunner()
     markdown_renderer = MarkdownReportRenderer()
     json_renderer = JSONReportRenderer()

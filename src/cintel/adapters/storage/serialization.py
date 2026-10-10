@@ -1,3 +1,5 @@
+"""Row payload serialization shared by the storage stores."""
+
 from __future__ import annotations
 
 import json
@@ -49,6 +51,7 @@ from cintel.utilities.secrets import is_sensitive_name
 
 
 def sanitized_json(value: object, configuration: BuildConfiguration) -> str:
+    """Serialize a payload with secret values redacted."""
     secret_values = _secret_values(configuration)
 
     def sanitize(item: object) -> object:
@@ -64,10 +67,12 @@ def sanitized_json(value: object, configuration: BuildConfiguration) -> str:
 
 
 def redact_text(value: str, configuration: BuildConfiguration) -> str:
+    """Redact likely secret assignments in raw text."""
     return _redact_secret_values(value, _secret_values(configuration))
 
 
 def build_configuration_from_dict(data: dict) -> BuildConfiguration:
+    """Deserialize a build configuration from its payload."""
     return BuildConfiguration(
         id=data["id"],
         repository_id=data["repository_id"],
@@ -88,6 +93,7 @@ def build_configuration_from_dict(data: dict) -> BuildConfiguration:
 
 
 def build_result_from_dict(data: dict) -> BuildDiscoveryResult:
+    """Deserialize a build discovery result from its payload."""
     return BuildDiscoveryResult(
         configuration=build_configuration_from_dict(data["configuration"]),
         make_arguments=tuple(data.get("make_arguments", ())),
@@ -136,6 +142,7 @@ def build_result_from_dict(data: dict) -> BuildDiscoveryResult:
 
 
 def compilation_unit_from_dict(data: dict) -> CompilationUnit:
+    """Deserialize a compilation unit from its payload."""
     return CompilationUnit(
         id=data["id"],
         repository_id=data["repository_id"],
@@ -149,6 +156,7 @@ def compilation_unit_from_dict(data: dict) -> CompilationUnit:
 
 
 def json_default(value: object) -> object:
+    """JSON fallback for enums, datetimes, and tuples."""
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Enum):
@@ -185,6 +193,7 @@ def _required_path_reference(data: dict) -> PathReference:
 
 
 def diagnostic_from_dict(data: dict) -> Diagnostic:
+    """Deserialize a diagnostic from its payload."""
     return Diagnostic(
         code=data["code"],
         severity=DiagnosticSeverity(data["severity"]),
@@ -206,6 +215,7 @@ def diagnostic_from_dict(data: dict) -> Diagnostic:
 
 
 def diagnostic_to_dict(diagnostic: Diagnostic) -> dict:
+    """Serialize a diagnostic payload next to its reader."""
     return {
         "technical_details": diagnostic.technical_details,
         "missing_capability": diagnostic.missing_capability,
@@ -277,6 +287,7 @@ def _capability_from_dict(data: dict) -> AnalysisCapability:
 
 
 def input_artifact_from_dict(data: dict) -> InputArtifact:
+    """Deserialize an input artifact from its payload."""
     return InputArtifact(
         id=data["id"],
         repository_id=data["repository_id"],
@@ -302,6 +313,7 @@ def source_analysis_from_parts(
     relationships: tuple[SourceRelationship, ...],
     diagnostics: tuple[Diagnostic, ...],
 ) -> SourceAnalysisResult:
+    """Assemble a run from its payload, symbols, relationships, and diagnostics."""
     return SourceAnalysisResult(
         id=data["id"],
         repository_id=data["repository_id"],
@@ -320,6 +332,7 @@ def source_analysis_from_parts(
 
 
 def source_symbol_from_dict(kind: str, data: dict) -> SourceSymbol:
+    """Deserialize a source symbol by kind."""
     common = {
         "id": data["id"],
         "name": data["name"],
@@ -385,6 +398,7 @@ def source_relationship_from_dict(kind: str, data: dict) -> SourceRelationship: 
 
 
 def source_relationship_from_dict(kind: str, data: dict) -> SourceRelationship:
+    """Deserialize a source relationship by kind."""
     evidence = tuple(
         _relationship_evidence_from_dict(item) for item in data.get("evidence", ())
     )

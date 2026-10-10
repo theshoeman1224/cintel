@@ -1,3 +1,5 @@
+"""Read-only compiler version probing."""
+
 from cintel.domain.models import CommandRequest, CommandRisk
 from cintel.ports.commands import CommandRunner
 

@@ -1,3 +1,5 @@
+"""Protocol contracts between application services and adapters."""
+
 from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.commands import CommandRunner
 from cintel.ports.services import (

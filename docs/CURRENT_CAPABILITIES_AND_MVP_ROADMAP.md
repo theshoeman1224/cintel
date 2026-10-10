@@ -55,15 +55,16 @@ PYTHONPATH=src python3 -m cintel --help
 PYTHONPATH=src python3 -m cintel build --help
 ```
 
-Result (re-verified 2026-10-10 after the Phase 2 usability pass):
+Result (re-verified 2026-10-10 after the Phase 4 documentation pass):
 
-- 272 tests passed: 220 unit and 52 integration, including the live complex
+- 275 tests passed: 223 unit and 52 integration, including the live complex
   fixture build, the cleanup-effort safety nets, the analysis workflow tests,
   the Phase 6 query, context, report, and migration suites, the CLI contract
-  suite, the architecture import checks, the renderer, artifact, guidance,
-  doctor, and serialization error branches, and the Phase 2 usability
-  regressions (missing-root analyze, unwritable output, structured JSON
-  errors, not-found queries, prerequisite hints, and parser validation).
+  suite, the architecture and documentation import checks, the renderer,
+  artifact, guidance, doctor, and serialization error branches, and the
+  Phase 2 usability regressions (missing-root analyze, unwritable output,
+  structured JSON errors, not-found queries, prerequisite hints, and parser
+  validation).
 - The analysis summary now tracks unresolved include directives end to end:
   `AnalysisRunSummary.unresolved_includes`, the call-resolution capability
   evidence, the `analyze` text/JSON render, and unit/integration assertions.
@@ -88,6 +89,9 @@ Result (re-verified 2026-10-10 after the Phase 2 usability pass):
   decomposed the analysis service, and removed the last type ignore. Report
   output and database tables were verified unchanged against pre-change
   snapshots.
+- The Phase 4 documentation pass added `AGENTS.md`, module docstrings for
+  every module, contract docstrings for ports, services, storage, and the
+  CLI, and `tests/unit/test_documentation.py` to keep that scope documented.
 - The CLI exposes `init`, `doctor`, `scan`, `setup`, `instructions`, `resume`,
   `analyze`, the `build discover`, `build units`, and `build show` subcommands,
   and the Phase 6 commands `symbols`, `show function`, `callers`, `callees`,

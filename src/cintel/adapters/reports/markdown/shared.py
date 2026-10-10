@@ -8,6 +8,7 @@ from cintel.domain.models import RepositoryReportData
 
 
 def require(data: Any, expected_type: type, report_name: str) -> None:
+    """Raise TypeError when report data has the wrong type."""
     if not isinstance(data, expected_type):
         raise TypeError(
             f"{report_name} requires {expected_type.__name__} data"
@@ -16,11 +17,13 @@ def require(data: Any, expected_type: type, report_name: str) -> None:
 
 
 def escape(value: str) -> str:
+    """Escape a value for a Markdown table cell."""
     return value.replace("|", "\\|")
 
 
 
 def build_awareness_markdown(data: RepositoryReportData) -> str:
+    """Render the build-awareness section of the repository inventory."""
     if not data.build_configurations:
         return "\n".join(
             (

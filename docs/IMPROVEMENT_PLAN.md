@@ -189,20 +189,24 @@ timestamped repository-inventory hashes, both normalized for comparison.
 
 ## Phase 4: agent navigation
 
-Status: pending
+Status: complete (2026-10-10)
 
-- New `AGENTS.md` with the layer map, command flows, invariants, test
-  commands, the fixture rule, where state lives on disk, and a doc map. Keep it
-  short and link to existing docs instead of duplicating them.
-- Module docstrings for every module, ports and application services first.
-- Class and method docstrings for the port protocols, application services,
-  the storage adapter's public surface, and the CLI entry points.
-- Why-comments at the non-obvious points in `conservative.py`, `sqlite.py`,
-  `adapters/reports/repository.py`, and `make.py`: masking strategy,
-  call-resolution ordering, budget cutoff, fingerprint semantics, projection
-  columns, and monotonic resolution.
+Landed:
 
-Verification: docstring coverage check passes, suite green.
+- `AGENTS.md` at the repository root: layer map, command flow, invariants,
+  fixture rule, state locations, test commands, and a doc map.
+- Module docstrings for every module under `src/cintel`; 46 were missing.
+- Class and public-method docstrings for the port protocols, application
+  services, storage adapter surface, CLI entry points, composition root, and
+  configuration. Adapter classes got one-line docs.
+- Why-comments at the non-obvious points: offset-preserving masking in
+  `conservative.py`, cache key versus build fingerprint in `make.py`,
+  monotonic call resolution in `analysis.py`, and the projection-column
+  versus JSON-payload split in `analysis_store.py`.
+- `tests/unit/test_documentation.py` enforces the scope as a ratchet: every
+  module, target classes, and target public functions stay documented.
+
+Verification: 275 tests pass (223 unit, 52 integration), ruff and mypy clean.
 
 ## Phase 5: documentation sync and redesign brief
 

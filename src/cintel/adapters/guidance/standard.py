@@ -1,3 +1,5 @@
+"""Standard capture commands for missing build evidence."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +10,7 @@ from cintel.utilities.secrets import redact_value
 
 
 class StandardInputGuidanceProvider:
+    """Build standard capture commands for missing evidence."""
     def instructions_for(
         self,
         repository_root: str,

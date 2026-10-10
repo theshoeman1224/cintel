@@ -35,7 +35,9 @@ from cintel.domain.models import (
 
 class AnalysisStore(StoreBase):
 
+    """Source-analysis runs, symbols, and relationship queries."""
     def replace_source_analysis(self, result: SourceAnalysisResult) -> None:
+        """Replace one run with its symbols, relationships, and diagnostics."""
         connection = self._connect()
         payload = json.dumps(
             {
@@ -145,6 +147,7 @@ class AnalysisStore(StoreBase):
     def list_source_analyses(
         self, repository_id: str
     ) -> tuple[SourceAnalysisResult, ...]:
+        """All stored runs for a repository."""
         rows = self._connect().execute(
             "SELECT id, payload FROM source_analysis_runs WHERE repository_id = ?",
             (repository_id,),
@@ -154,6 +157,7 @@ class AnalysisStore(StoreBase):
     def list_source_analyses_for_file(
         self, repository_file_id: str
     ) -> tuple[SourceAnalysisResult, ...]:
+        """Runs for one file; unit-scoped runs first, then a deterministic order."""
         rows = self._connect().execute(
             """
             SELECT id, payload FROM source_analysis_runs
@@ -167,6 +171,7 @@ class AnalysisStore(StoreBase):
     def get_source_analysis_for_compilation_unit(
         self, compilation_unit_id: str
     ) -> SourceAnalysisResult | None:
+        """Run stored for a unit, or None when absent."""
         row = self._connect().execute(
             """
             SELECT id, payload FROM source_analysis_runs
@@ -183,6 +188,7 @@ class AnalysisStore(StoreBase):
         kind: str | None = None,
         name: str | None = None,
     ) -> tuple[SymbolOccurrence, ...]:
+        """Symbol occurrences with optional kind and exact-name filters."""
         query = """
             SELECT s.analysis_id, s.kind, s.payload, r.repository_file_id,
                    r.compilation_unit_id
@@ -213,6 +219,7 @@ class AnalysisStore(StoreBase):
     def get_symbols_by_ids(
         self, repository_id: str, symbol_ids: tuple[str, ...]
     ) -> tuple[SymbolOccurrence, ...]:
+        """Occurrences for the given symbol ids; empty input returns ()."""
         if not symbol_ids:
             return ()
         query = f"""
@@ -245,6 +252,7 @@ class AnalysisStore(StoreBase):
         callee_ids: tuple[str, ...] | None = None,
         callee_spelling: str | None = None,
     ) -> tuple[CallEdge, ...]:
+        """Call edges with optional filters; an empty id filter returns ()."""
         if caller_ids is not None and not caller_ids:
             return ()
         if callee_ids is not None and not callee_ids:
@@ -280,6 +288,7 @@ class AnalysisStore(StoreBase):
     def find_global_usage_edges(
         self, repository_id: str
     ) -> tuple[GlobalUsageEdge, ...]:
+        """All global-usage edges for a repository."""
         query = """
             SELECT s.analysis_id, s.payload, r.repository_file_id
             FROM source_relationships AS s
@@ -301,6 +310,7 @@ class AnalysisStore(StoreBase):
         )
 
     def find_include_edges(self, repository_id: str) -> tuple[IncludeEdge, ...]:
+        """All include edges for a repository."""
         query = """
             SELECT s.analysis_id, s.payload, r.repository_file_id
             FROM source_relationships AS s
@@ -382,6 +392,8 @@ def _symbol_is_definition(symbol: SourceSymbol) -> int | None:
 def _relationship_projection_values(
     relationship: IncludeRelationship | CallRelationship | GlobalUsageRelationship,
 ) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
+    # Projection columns exist so queries filter in SQL; the JSON payload
+    # remains the source of truth for reconstruction.
     if isinstance(relationship, CallRelationship):
         return (
             relationship.caller_id,

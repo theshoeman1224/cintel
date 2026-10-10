@@ -1,3 +1,5 @@
+"""Configuration loading and models."""
+
 from cintel.configuration.loader import default_config, load_config
 from cintel.configuration.models import AppConfig
 

@@ -50,11 +50,13 @@ _CODE_SECTIONS = frozenset({"Definition", "Preceding comment"})
 
 @dataclass(frozen=True, slots=True)
 class ContextResult:
+    """A written context package and its path."""
     package: ContextPackage
     output_path: str
 
 
 class ContextService:
+    """Assemble deterministic, budgeted context packages for one function."""
     def __init__(
         self,
         queries: SymbolQueryService,
@@ -73,6 +75,7 @@ class ContextService:
         file: str | None = None,
         budget: int = DEFAULT_CONTEXT_BUDGET,
     ) -> ContextResult | FunctionCandidates | FunctionNotFound:
+        """Build and write a package, or return candidate or not-found results."""
         if budget <= 0:
             raise ValueError("Context budget must be positive")
         detail = self._queries.function(app_config, name, file=file)
@@ -449,6 +452,7 @@ def _apply_budget(
 
 
 def render_context_markdown(package: ContextPackage) -> str:
+    """Render the package's sections as Markdown."""
     lines = [f"# {package.title}", ""]
     for title, body in package.sections:
         lines.append(f"## {title}")

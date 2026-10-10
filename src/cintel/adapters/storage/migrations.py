@@ -1,3 +1,5 @@
+"""Incremental schema migrations up to the current version."""
+
 from __future__ import annotations
 
 import json
@@ -8,6 +10,7 @@ SCHEMA_VERSION = 6
 
 
 def migrate(connection: sqlite3.Connection, current_version: int) -> None:
+    """Apply every migration after the stored schema version."""
     migrations = (_to_v1, _to_v2, _to_v3, _to_v4, _to_v5, _to_v6)
     for target_version, migration in enumerate(migrations, 1):
         if current_version < target_version:

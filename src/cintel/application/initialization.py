@@ -1,3 +1,5 @@
+"""Workspace initialization."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -27,6 +29,7 @@ OUTPUT_DIRECTORIES = (
 
 @dataclass(frozen=True, slots=True)
 class InitializationResult:
+    """What initialize created or reused."""
     config: AppConfig
     repository: Repository
     created_paths: tuple[str, ...]
@@ -34,12 +37,14 @@ class InitializationResult:
 
 
 class InitializationService:
+    """Create the workspace, configuration, and database."""
     def initialize(
         self,
         repository_root: Path,
         storage_factory: Callable[[Path], AnalysisStorage],
         output_directory: Path | None = None,
     ) -> InitializationResult:
+        """Initialize idempotently; refuse to overwrite a modified config."""
         root = repository_root.expanduser().resolve()
         if not root.exists():
             raise InitializationError(f"Repository does not exist: {root}")

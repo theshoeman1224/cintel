@@ -1,3 +1,5 @@
+"""Pure domain models, diagnostics, and errors."""
+
 from cintel.domain.diagnostics import (
     Diagnostic,
     DiagnosticSeverity,

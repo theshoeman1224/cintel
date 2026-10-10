@@ -18,6 +18,7 @@ def replace_diagnostics(
     diagnostics: tuple[Diagnostic, ...],
     context: str,
 ) -> None:
+    """Delete and reinsert one context's diagnostics."""
     connection.execute(
         "DELETE FROM diagnostics WHERE repository_id = ? AND context_key = ?",
         (repository_id, context),
@@ -50,6 +51,7 @@ def read_diagnostics(
     exact_context: str | None = None,
     context_prefix: str | None = None,
 ) -> tuple[Diagnostic, ...]:
+    """Read diagnostics by exact context or context prefix."""
     query = (
         "SELECT code, severity, message, payload FROM diagnostics "
         "WHERE repository_id = ?"
@@ -75,6 +77,7 @@ def read_diagnostics(
 def load_diagnostics(
     connection: sqlite3.Connection, repository_id: str, context: str
 ) -> tuple[Diagnostic, ...]:
+    """Read diagnostics for one exact context key."""
     return read_diagnostics(connection, repository_id, exact_context=context)
 
 

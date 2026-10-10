@@ -1,3 +1,5 @@
+"""Compiler command and metadata adapters."""
+
 from cintel.adapters.compiler.gcc_arguments import GCCCompilerCommandParser
 from cintel.adapters.compiler.metadata import GCCCompilerMetadataProvider
 

@@ -1,3 +1,5 @@
+"""Build discovery orchestration, caching, and unit queries."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -21,6 +23,7 @@ from cintel.utilities.paths import stable_repository_id
 
 
 class BuildDiscoveryService:
+    """Orchestrate discovery, caching, and persisted-unit queries."""
     def __init__(
         self,
         provider: BuildDiscoveryProvider,
@@ -43,6 +46,7 @@ class BuildDiscoveryService:
         name: str,
         respect_make_timestamps: bool,
     ) -> BuildConfiguration:
+        """Resolve CLI inputs into a stored-ready build configuration."""
         root = Path(app_config.repository_root).resolve()
         self._repository_scanner.scan(app_config)
         workdir = (
@@ -93,11 +97,13 @@ class BuildDiscoveryService:
         )
 
     def preview(self, configuration: BuildConfiguration) -> tuple[str, ...]:
+        """Return the command discover would run, without running it."""
         return self._provider.command_request(configuration).arguments
 
     def discover(
         self, app_config: AppConfig, configuration: BuildConfiguration, force: bool = False
     ) -> BuildDiscoveryResult:
+        """Run or reuse a discovery and persist the result."""
         input_fingerprint = self._provider.input_fingerprint(configuration)
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             if not force:
@@ -114,6 +120,7 @@ class BuildDiscoveryService:
         raw_output: str,
         artifact_hash: str,
     ) -> BuildDiscoveryResult:
+        """Parse validated saved output through the same adapter path."""
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             result = self._provider.discover_from_output(
                 configuration,
@@ -152,6 +159,7 @@ class BuildDiscoveryService:
     def list_units(
         self, app_config: AppConfig, build_configuration_name: str | None = None
     ) -> tuple[CompilationUnit, ...]:
+        """Persisted units for a repository and optional configuration."""
         repository_id = stable_repository_id(app_config.repository_root)
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             return storage.list_compilation_units(
@@ -164,6 +172,7 @@ class BuildDiscoveryService:
         source_file: str,
         build_configuration_name: str | None = None,
     ) -> tuple[CompilationUnit, ...]:
+        """Units whose source matches the given repository-relative path."""
         root = Path(app_config.repository_root).resolve()
         requested = Path(source_file)
         absolute = (
@@ -181,6 +190,7 @@ class BuildDiscoveryService:
 
 
 def parse_assignments(values: list[str] | None, option_name: str) -> tuple[tuple[str, str], ...]:
+    """Parse repeated NAME=value arguments into ordered pairs."""
     assignments: list[tuple[str, str]] = []
     for value in values or []:
         if "=" not in value:

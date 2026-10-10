@@ -31,6 +31,7 @@ from cintel.domain.models import (
 
 
 class JSONReportRenderer:
+    """Serialize each report family from its typed data."""
     def render(self, report_name: str, data: Any) -> str:
         handler = _JSON_HANDLERS.get(report_name)
         if handler is None:

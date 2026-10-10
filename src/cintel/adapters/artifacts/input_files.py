@@ -1,3 +1,5 @@
+"""Copy, validate, and re-read user-supplied evidence."""
+
 from __future__ import annotations
 
 import hashlib

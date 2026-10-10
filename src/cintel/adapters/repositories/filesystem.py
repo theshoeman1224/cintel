@@ -1,3 +1,5 @@
+"""Filesystem walk, exclusion matching, and hash reuse."""
+
 from __future__ import annotations
 
 import os

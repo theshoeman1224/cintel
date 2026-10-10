@@ -1,3 +1,5 @@
+"""Environment and repository diagnostics."""
+
 from __future__ import annotations
 
 import os
@@ -25,10 +27,12 @@ from cintel.utilities.paths import is_excluded
 
 
 class DoctorService:
+    """Inspect the environment and repository without changing either."""
     def __init__(self, command_runner: CommandRunner) -> None:
         self._runner = command_runner
 
     def inspect(self, config: AppConfig) -> DoctorReport:
+        """Return tools, detected inputs, capabilities, and diagnostics."""
         root = Path(config.repository_root)
         command_working_directory = root if root.is_dir() else Path.cwd()
         tools = self._inspect_tools(command_working_directory)

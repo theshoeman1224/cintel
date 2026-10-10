@@ -47,6 +47,7 @@ class SymbolEntry:
 
 @dataclass(frozen=True, slots=True)
 class SymbolsResult:
+    """Stored symbols matching the requested filters."""
     repository_id: str
     entries: tuple[SymbolEntry, ...]
 
@@ -68,6 +69,7 @@ class CallSite:
 
 @dataclass(frozen=True, slots=True)
 class FunctionDetail:
+    """One function with its declarations, callers, and callees."""
     repository_id: str
     definition: SymbolEntry
     declarations: tuple[SymbolEntry, ...]
@@ -91,6 +93,7 @@ class FunctionNotFound:
 
 
 class SymbolQueryService:
+    """Read-only queries over stored source analyses."""
     def __init__(
         self, storage_factory: Callable[[Path], AnalysisStorage]
     ) -> None:
@@ -103,6 +106,7 @@ class SymbolQueryService:
         kind: str | None = None,
         name: str | None = None,
     ) -> SymbolsResult:
+        """List stored symbols with optional kind and exact-name filters."""
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
@@ -121,6 +125,7 @@ class SymbolQueryService:
         *,
         file: str | None = None,
     ) -> FunctionDetail | FunctionCandidates | FunctionNotFound:
+        """Return one definition with relationships, candidates, or not-found."""
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
@@ -158,6 +163,7 @@ class SymbolQueryService:
         *,
         file: str | None = None,
     ) -> tuple[CallSite, ...] | FunctionCandidates | FunctionNotFound:
+        """Call sites that resolve to the named function."""
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
@@ -179,6 +185,7 @@ class SymbolQueryService:
         *,
         file: str | None = None,
     ) -> tuple[CallSite, ...] | FunctionCandidates | FunctionNotFound:
+        """Functions the named function calls."""
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)

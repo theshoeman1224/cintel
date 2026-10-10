@@ -1,3 +1,5 @@
+"""GNU Make dry-run discovery and output parsing."""
+
 from __future__ import annotations
 
 import re
@@ -68,6 +70,7 @@ def _leave_directory(
 
 
 class MakeBuildDiscovery:
+    """Evaluate GNU Make and parse its output into build results."""
     def __init__(
         self,
         command_runner: CommandRunner,
@@ -106,6 +109,8 @@ class MakeBuildDiscovery:
         diagnostics = _execution_diagnostics(configuration, result, parsed)
         input_fingerprint = self.input_fingerprint(configuration)
         compiler_versions = self._compiler_versions(parsed.compiler_invocations)
+        # input_fingerprint keys the discovery cache; build_fingerprint records
+        # the normalized commands and toolchain so callers can detect drift.
         build_fingerprint = stable_fingerprint(
             {
                 "input_fingerprint": input_fingerprint,

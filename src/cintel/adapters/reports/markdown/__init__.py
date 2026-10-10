@@ -24,6 +24,7 @@ from cintel.adapters.reports.markdown import (
 
 
 class MarkdownReportRenderer:
+    """Dispatch each report family to its Markdown module."""
     def render(self, report_name: str, data: Any) -> str:
         handler = _MARKDOWN_HANDLERS.get(report_name)
         if handler is None:

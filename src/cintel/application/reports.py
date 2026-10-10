@@ -74,6 +74,7 @@ _REPORT_FAMILIES = (
 
 @dataclass(frozen=True, slots=True)
 class GeneratedReport:
+    """One written report file."""
     report_name: str
     format: str
     path: str
@@ -81,6 +82,7 @@ class GeneratedReport:
 
 @dataclass(frozen=True, slots=True)
 class ReportRunResult:
+    """Every report written by one generate_all call."""
     repository_id: str
     reports: tuple[GeneratedReport, ...]
     diagnostics: tuple[Diagnostic, ...]
@@ -88,6 +90,7 @@ class ReportRunResult:
 
 
 class ReportService:
+    """Generate all report families from persisted state."""
     def __init__(
         self,
         scanner: RepositoryScanService,
@@ -103,6 +106,7 @@ class ReportService:
         self._storage_factory = storage_factory
 
     def generate_all(self, app_config: AppConfig) -> ReportRunResult:
+        """Scan, gather stored state, and render every family in both formats."""
         scan_result = self._scanner.scan(app_config)
         if scan_result.markdown_report is None or scan_result.json_report is None:
             raise ConfigurationError(

@@ -1,3 +1,5 @@
+"""SQLite persistence adapters."""
+
 from cintel.adapters.storage.migrations import SCHEMA_VERSION
 from cintel.adapters.storage.sqlite import SQLiteAnalysisStorage
 

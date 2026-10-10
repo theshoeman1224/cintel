@@ -1,3 +1,5 @@
+"""Diagnostic and capability policy for recovery."""
+
 from __future__ import annotations
 
 from cintel.domain.diagnostics import (
@@ -19,6 +21,7 @@ from cintel.domain.models import (
 def missing_build_diagnostic(
     configuration: BuildConfiguration | None,
 ) -> Diagnostic:
+    """Diagnostic describing absent build evidence."""
     return Diagnostic(
         code=DiagnosticCode.BUILD_EVIDENCE_MISSING,
         severity=DiagnosticSeverity.WARNING,
@@ -36,6 +39,7 @@ def missing_build_diagnostic(
 
 
 def invalid_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
+    """Diagnostic for an artifact that failed validation."""
     return Diagnostic(
         code=DiagnosticCode.INPUT_ARTIFACT_INVALID,
         severity=DiagnosticSeverity.ERROR,
@@ -49,6 +53,7 @@ def invalid_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
 
 
 def stale_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
+    """Diagnostic for modified or mismatched evidence."""
     return Diagnostic(
         code=DiagnosticCode.INPUT_ARTIFACT_STALE,
         severity=DiagnosticSeverity.WARNING,
@@ -64,6 +69,7 @@ def stale_artifact_diagnostic(artifact: InputArtifact) -> Diagnostic:
 def deduplicate_diagnostics(
     diagnostics: tuple[Diagnostic, ...],
 ) -> tuple[Diagnostic, ...]:
+    """Drop repeated diagnostics while keeping first-seen order."""
     return tuple(
         {
             (item.code, item.message, item.related_paths): item
@@ -77,6 +83,7 @@ def recovery_status(
     units_available: bool,
     artifacts: tuple[InputArtifact, ...] = (),
 ) -> WorkflowStatus:
+    """Workflow status implied by the supplied diagnostics and artifacts."""
     if any(item.severity is DiagnosticSeverity.ERROR for item in diagnostics):
         return WorkflowStatus.INTERRUPTED
     if (
@@ -89,6 +96,7 @@ def recovery_status(
 
 
 def recovery_capabilities(units_available: bool) -> tuple[AnalysisCapability, ...]:
+    """Capability records for the recovery workflow."""
     return (
         AnalysisCapability(
             name="input_artifact_recovery",

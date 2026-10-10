@@ -22,7 +22,9 @@ from cintel.domain.models import (
 
 class BuildStore(StoreBase):
 
+    """Build configurations, discovery runs, and compilation units."""
     def save_build_discovery(self, result: BuildDiscoveryResult) -> None:
+        """Persist a run with its configuration, invocations, units, and commands."""
         connection = self._connect()
         configuration_payload = sanitized_json(
             asdict(result.configuration), result.configuration
@@ -138,6 +140,7 @@ class BuildStore(StoreBase):
     def get_cached_build_discovery(
         self, input_fingerprint: str
     ) -> BuildDiscoveryResult | None:
+        """Result whose input fingerprint matches, or None."""
         row = self._connect().execute(
             "SELECT payload FROM build_discovery_runs WHERE input_fingerprint = ?",
             (input_fingerprint,),
@@ -147,6 +150,7 @@ class BuildStore(StoreBase):
     def list_build_configurations(
         self, repository_id: str
     ) -> tuple[BuildConfiguration, ...]:
+        """Configurations ordered by name and id."""
         rows = self._connect().execute(
             """
             SELECT payload FROM build_configurations
@@ -160,6 +164,7 @@ class BuildStore(StoreBase):
     def list_compilation_units(
         self, repository_id: str, build_configuration_name: str | None = None
     ) -> tuple[CompilationUnit, ...]:
+        """Units, optionally filtered by configuration name."""
         arguments: list[str] = [repository_id]
         query = """
             SELECT units.payload

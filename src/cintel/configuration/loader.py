@@ -1,3 +1,5 @@
+"""TOML loading, defaults, and rendering."""
+
 from __future__ import annotations
 
 import tomllib
@@ -10,10 +12,12 @@ DEFAULT_CONFIG_NAME = "config.toml"
 
 
 def default_output_directory(repository_root: Path) -> Path:
+    """Conventional workspace directory inside a repository."""
     return repository_root / ".code-intelligence"
 
 
 def default_config(repository_root: Path, output_directory: Path | None = None) -> AppConfig:
+    """Build a config with conventional paths and default exclusions."""
     root = repository_root.expanduser().resolve()
     output = (output_directory or default_output_directory(root)).expanduser().resolve()
     return AppConfig(
@@ -24,6 +28,7 @@ def default_config(repository_root: Path, output_directory: Path | None = None) 
 
 
 def load_config(path: Path) -> AppConfig:
+    """Read config.toml, resolving relative paths against the repository root."""
     try:
         with path.open("rb") as stream:
             raw = tomllib.load(stream)
@@ -55,6 +60,7 @@ def load_config(path: Path) -> AppConfig:
 
 
 def render_config(config: AppConfig) -> str:
+    """Render a config as the documented TOML schema."""
     exclusions = ", ".join(_toml_string(item) for item in config.exclusion_patterns)
     return "\n".join(
         (

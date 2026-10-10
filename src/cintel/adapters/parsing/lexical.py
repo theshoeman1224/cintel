@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True, slots=True)
 class MaskIssue:
+    """A comment or literal left unclosed by masking."""
     message: str
     offset: int
     end_offset: int
@@ -18,6 +19,7 @@ class MaskIssue:
 
 @dataclass(frozen=True, slots=True)
 class MaskedCSource:
+    """Source text with comments and literals blanked, offsets preserved."""
     text: str
     issues: tuple[MaskIssue, ...]
 

@@ -1,3 +1,5 @@
+"""Build-system adapters; GNU Make today."""
+
 from cintel.adapters.build.make import (
     MakeBuildDiscovery,
     build_discovery_input_fingerprint,

@@ -300,6 +300,11 @@ total. Ports define every contract without documentation. There is no
 `AGENTS.md` and no test enforcing import direction. `.portfolio/architecture.md`
 still says cross-file resolution "is not yet exposed through the CLI".
 
+Status update 2026-10-10: Phase 4 added `AGENTS.md`, module docstrings
+everywhere, contract-level docstrings for ports, services, storage, and the
+CLI, and a documentation ratchet test. The stale architecture line is fixed in
+Phase 5.
+
 ### Test coverage
 
 Adapter and happy-path coverage is strong. The gaps are failure paths:

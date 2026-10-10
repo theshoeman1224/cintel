@@ -1,3 +1,5 @@
+"""Repository scanning and inventory reporting."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -20,12 +22,14 @@ from cintel.utilities.paths import stable_repository_id
 
 @dataclass(frozen=True, slots=True)
 class ScanWorkflowResult:
+    """A scan plus the inventory reports written for it."""
     scan: RepositoryScan
     markdown_report: str | None
     json_report: str | None
 
 
 class RepositoryScanService:
+    """Discover, persist, and report the repository inventory."""
     def __init__(
         self,
         discovery: RepositoryDiscoveryProvider,
@@ -41,6 +45,7 @@ class RepositoryScanService:
         self._storage_factory = storage_factory
 
     def scan(self, config: AppConfig) -> ScanWorkflowResult:
+        """Scan the repository, persist state, and refresh the inventory reports."""
         root = Path(config.repository_root)
         repository_id = stable_repository_id(root)
         if not root.is_dir():

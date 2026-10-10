@@ -1,3 +1,5 @@
+"""GCC-style command parsing without invoking a compiler."""
+
 from __future__ import annotations
 
 import re

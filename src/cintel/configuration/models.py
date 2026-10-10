@@ -1,3 +1,5 @@
+"""Configuration data model."""
+
 from dataclasses import dataclass
 
 DEFAULT_EXCLUSIONS = (
@@ -16,6 +18,7 @@ DEFAULT_EXCLUSIONS = (
 
 @dataclass(frozen=True, slots=True)
 class AppConfig:
+    """Repository paths, exclusions, and the AI flag."""
     repository_root: str
     output_directory: str
     database_path: str

@@ -1,3 +1,5 @@
+"""Storage lifecycle context manager."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
@@ -11,6 +13,7 @@ from cintel.ports.storage import AnalysisStorage
 def storage_session(
     factory: Callable[[Path], AnalysisStorage], database_path: str | Path
 ) -> Iterator[AnalysisStorage]:
+    """Open, initialize, and always close storage around a block."""
     storage = factory(Path(database_path))
     try:
         storage.initialize()

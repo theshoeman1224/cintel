@@ -1,3 +1,5 @@
+"""Guided evidence capture, validation, and resumable stages."""
+
 from __future__ import annotations
 
 import hashlib
@@ -48,6 +50,7 @@ from cintel.utilities.secrets import redact_assignment_arguments
 
 
 class GuidedRecoveryService:
+    """Assess missing inputs, validate evidence, and resume stages."""
     def __init__(
         self,
         scanner: RepositoryScanService,
@@ -69,6 +72,7 @@ class GuidedRecoveryService:
     def setup(
         self, app_config: AppConfig, configuration: BuildConfiguration | None
     ) -> RecoveryResult:
+        """Scan, assess missing capabilities, and write REQUIRED_INPUTS.md."""
         scan = self._scanner.scan(app_config).scan
         with self._storage(app_config) as storage:
             units, diagnostics, artifacts = self._stored_evidence(
@@ -98,6 +102,7 @@ class GuidedRecoveryService:
     def instructions(
         self, app_config: AppConfig, configuration: BuildConfiguration | None
     ) -> RecoveryResult:
+        """Regenerate REQUIRED_INPUTS.md from persisted diagnostics."""
         scan = self._scanner.scan(app_config).scan
         with self._storage(app_config) as storage:
             units, diagnostics, artifacts = self._stored_evidence(
@@ -119,6 +124,7 @@ class GuidedRecoveryService:
         artifact_type: InputArtifactType = InputArtifactType.MAKE_DRY_RUN,
         path_placeholders: tuple[tuple[str, str], ...] = (),
     ) -> RecoveryResult:
+        """Validate optional evidence and continue from completed stages."""
         scan = self._scanner.scan(app_config).scan
         repository_id = scan.repository.id
         build_result: BuildDiscoveryResult | None = None
@@ -346,6 +352,7 @@ DEFAULT_PLACEHOLDER_NAME = "<FIXTURE_ROOT>"
 def parse_path_placeholders(
     values: list[str] | None, option_name: str
 ) -> tuple[tuple[str, str], ...]:
+    """Parse repeated OLD=NEW path substitutions."""
     placeholders: list[tuple[str, str]] = []
     for value in values or []:
         if "=" not in value:

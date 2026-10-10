@@ -22,7 +22,9 @@ from cintel.domain.models import (
 
 class WorkflowStore(StoreBase):
 
+    """Workflow state, input artifacts, and generated-report metadata."""
     def save_report_metadata(self, report: GeneratedReportMetadata) -> None:
+        """Insert or update one generated-report record."""
         self._connect().execute(
             """
             INSERT INTO generated_reports
@@ -47,6 +49,7 @@ class WorkflowStore(StoreBase):
         self._connect().commit()
 
     def save_input_artifact(self, artifact: InputArtifact) -> None:
+        """Insert or update one imported-evidence record."""
         self._connect().execute(
             """
             INSERT INTO input_artifacts
@@ -73,6 +76,7 @@ class WorkflowStore(StoreBase):
         self._connect().commit()
 
     def list_input_artifacts(self, repository_id: str) -> tuple[InputArtifact, ...]:
+        """Imported evidence ordered by id."""
         rows = self._connect().execute(
             "SELECT payload FROM input_artifacts WHERE repository_id = ? ORDER BY id",
             (repository_id,),
@@ -80,6 +84,7 @@ class WorkflowStore(StoreBase):
         return tuple(input_artifact_from_dict(json.loads(row[0])) for row in rows)
 
     def save_workflow_state(self, state: WorkflowState) -> None:
+        """Upsert the state of one workflow stage."""
         self._connect().execute(
             """
             INSERT INTO workflow_state (repository_id, stage, status, updated_at, payload)
@@ -100,6 +105,7 @@ class WorkflowStore(StoreBase):
         self._connect().commit()
 
     def list_workflow_states(self, repository_id: str) -> tuple[WorkflowState, ...]:
+        """States ordered by update time and stage."""
         rows = self._connect().execute(
             """
             SELECT repository_id, stage, status, updated_at, payload

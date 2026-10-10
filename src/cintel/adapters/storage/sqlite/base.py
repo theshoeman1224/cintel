@@ -18,11 +18,13 @@ class StoreBase:
 
 
 class SQLiteConnection(StoreBase):
+    """Own the database path and one lazily opened connection."""
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
         self._connection: sqlite3.Connection | None = None
 
     def initialize(self) -> None:
+        """Create or migrate the database; raise StorageError when unusable."""
         try:
             self._database_path.parent.mkdir(parents=True, exist_ok=True)
             connection = self._connect()
@@ -44,11 +46,13 @@ class SQLiteConnection(StoreBase):
             raise StorageError(f"Unable to initialize {self._database_path}: {exc}") from exc
 
     def close(self) -> None:
+        """Release the connection; safe to call more than once."""
         if self._connection is not None:
             self._connection.close()
             self._connection = None
 
     def schema_version(self) -> int:
+        """Stored schema version, 0 when uninitialized."""
         row = self._connect().execute(
             "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
         ).fetchone()
