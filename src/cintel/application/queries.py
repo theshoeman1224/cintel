@@ -83,6 +83,13 @@ class FunctionCandidates:
     candidates: tuple[SymbolEntry, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class FunctionNotFound:
+    """No stored definition matched the requested function name."""
+
+    name: str
+
+
 class SymbolQueryService:
     def __init__(
         self, storage_factory: Callable[[Path], AnalysisStorage]
@@ -113,7 +120,7 @@ class SymbolQueryService:
         name: str,
         *,
         file: str | None = None,
-    ) -> FunctionDetail | FunctionCandidates:
+    ) -> FunctionDetail | FunctionCandidates | FunctionNotFound:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
@@ -123,12 +130,16 @@ class SymbolQueryService:
             definitions = [
                 item for item in occurrences if _is_function_definition(item)
             ]
+            if not definitions:
+                return FunctionNotFound(name=name)
             if file is not None:
                 definitions = [
                     item
                     for item in definitions
                     if files_by_id[item.repository_file_id].relative_path == file
                 ]
+                if not definitions:
+                    return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
                 candidates = _deduplicate(
@@ -159,11 +170,13 @@ class SymbolQueryService:
         name: str,
         *,
         file: str | None = None,
-    ) -> tuple[CallSite, ...] | FunctionCandidates:
+    ) -> tuple[CallSite, ...] | FunctionCandidates | FunctionNotFound:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
             definitions = _definitions(storage, repository_id, name, file, files_by_id)
+            if not definitions:
+                return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
                 return FunctionCandidates(
@@ -183,11 +196,13 @@ class SymbolQueryService:
         name: str,
         *,
         file: str | None = None,
-    ) -> tuple[CallSite, ...] | FunctionCandidates:
+    ) -> tuple[CallSite, ...] | FunctionCandidates | FunctionNotFound:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
             definitions = _definitions(storage, repository_id, name, file, files_by_id)
+            if not definitions:
+                return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
                 return FunctionCandidates(
@@ -331,8 +346,8 @@ def _select_definition(
     """Collapse per-unit duplicates of the same definition.
 
     Returns the presented entry plus every stored symbol id belonging to that
-    definition across compilation units, or ``None`` when the name is
-    ambiguous (or absent).
+    definition across compilation units, or ``None`` when several distinct
+    definitions match the name.
     """
 
     grouped: dict[tuple[str, int, str], list[SymbolOccurrence]] = {}

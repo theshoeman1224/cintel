@@ -36,6 +36,14 @@ sys.exit(0 if sys.version_info >= (3, 11) else 1)
 EOF
 }
 
+venv_ok() {
+    # A venv is reusable only when its interpreter runs and its pip works.
+    # A system Python upgrade can leave a stale interpreter with missing pip.
+    [[ -x "$1/bin/python" ]] \
+        && python_ok "$1/bin/python" \
+        && "$1/bin/python" -m pip --version >/dev/null 2>&1
+}
+
 # ---------------------------------------------------------------------------
 # 1. Find a suitable Python interpreter
 # ---------------------------------------------------------------------------
@@ -62,11 +70,11 @@ echo "Using interpreter: $PYTHON ($("$PYTHON" --version))"
 # ---------------------------------------------------------------------------
 section "Setting up virtual environment"
 
-if [[ -x "$VENV_DIR/bin/python" ]] && python_ok "$VENV_DIR/bin/python"; then
+if venv_ok "$VENV_DIR"; then
     echo "Reusing existing virtualenv at $VENV_DIR"
 else
     if [[ -e "$VENV_DIR" ]]; then
-        echo "Removing broken virtualenv at $VENV_DIR"
+        echo "Removing unusable virtualenv at $VENV_DIR"
         rm -rf "$VENV_DIR"
     fi
     "$PYTHON" -m venv "$VENV_DIR"
@@ -86,7 +94,8 @@ section "Installing cintel"
 
 echo
 echo "cintel is installed:"
-"$PYTHON" -m cintel --help | head -n 3
+help_output="$("$PYTHON" -m cintel --help)"
+head -n 3 <<<"$help_output"
 
 # ---------------------------------------------------------------------------
 # 4. Optional test run
@@ -195,17 +204,20 @@ case "$EVIDENCE" in
                 MAKE_ARGS+=(--make-var "$var")
             done
             ANALYZE_WITH_BUILD=true
-            discovery_output="$("$PYTHON" -m cintel --repository "$REPO" \
-                "${MAKE_ARGS[@]}" build discover 2>&1)" || {
+            if ! discovery_output="$("$PYTHON" -m cintel --repository "$REPO" \
+                "${MAKE_ARGS[@]}" build discover 2>&1)"; then
                 echo "$discovery_output" >&2
-                exit 1
-            }
-            echo "$discovery_output"
-            if grep -q "^Compiler invocations: 0" <<<"$discovery_output"; then
                 echo
-                echo "hint: no compiler commands were found. The target may not exist."
-                echo "      Try another target, e.g.: make -n -f $MAKEFILE <target>"
-                echo "      Saved dry-run text can also be imported via choice 2."
+                echo "Build discovery failed; continuing with file-scoped analysis."
+                ANALYZE_WITH_BUILD=false
+            else
+                echo "$discovery_output"
+                if grep -q "^Compiler invocations: 0" <<<"$discovery_output"; then
+                    echo
+                    echo "hint: no compiler commands were found. The target may not exist."
+                    echo "      Try another target, e.g.: make -n -f $MAKEFILE <target>"
+                    echo "      Saved dry-run text can also be imported via choice 2."
+                fi
             fi
         fi
         ;;
@@ -222,8 +234,13 @@ case "$EVIDENCE" in
         INPUT_TYPE="$REPLY"
         echo
         MAKE_ARGS=(--build-config "$BUILD_CONFIG" --input-file "$INPUT_FILE" --input-type "$INPUT_TYPE")
-        "$PYTHON" -m cintel --repository "$REPO" resume "${MAKE_ARGS[@]}"
-        ANALYZE_WITH_BUILD=true
+        if "$PYTHON" -m cintel --repository "$REPO" resume "${MAKE_ARGS[@]}"; then
+            ANALYZE_WITH_BUILD=true
+        else
+            echo
+            echo "Evidence import failed; continuing with file-scoped analysis."
+            echo "Fix the input and re-run, or choose option 1 on a machine with Make."
+        fi
         ;;
     3)
         echo "Skipping build evidence; analysis will be file-scoped."
@@ -238,13 +255,23 @@ if [[ "$ANALYZE_WITH_BUILD" == true ]]; then
     ANALYZE_ARGS+=(--build-config "$BUILD_CONFIG")
 fi
 
-analyze_output="$("$PYTHON" -m cintel "${ANALYZE_ARGS[@]}" analyze 2>&1)" || true
+ANALYZE_STATUS=0
+analyze_output="$("$PYTHON" -m cintel "${ANALYZE_ARGS[@]}" analyze 2>&1)" \
+    || ANALYZE_STATUS=$?
 echo "$analyze_output"
+if [[ "$ANALYZE_STATUS" != 0 ]]; then
+    echo "warning: cintel analyze exited with status $ANALYZE_STATUS." >&2
+fi
 
 echo
 echo "Regenerating reports (cintel report)..."
-report_output="$("$PYTHON" -m cintel --repository "$REPO" report 2>&1)" || true
+REPORT_STATUS=0
+report_output="$("$PYTHON" -m cintel --repository "$REPO" report 2>&1)" \
+    || REPORT_STATUS=$?
 echo "$report_output"
+if [[ "$REPORT_STATUS" != 0 ]]; then
+    echo "warning: cintel report exited with status $REPORT_STATUS." >&2
+fi
 
 # ---------------------------------------------------------------------------
 # 6. Wrap-up
@@ -268,13 +295,16 @@ echo "  Missing-evidence guidance: REQUIRED_INPUTS.md"
 echo
 echo "Next steps:"
 if $ANALYZE_WITH_BUILD; then
-    echo "  cintel --repository $REPO --build-config $BUILD_CONFIG build units"
-    echo "  cintel --repository $REPO --build-config $BUILD_CONFIG build show src/some_file.c"
+    echo "  cintel --repository \"$REPO\" --build-config \"$BUILD_CONFIG\" build units"
+    echo "  cintel --repository \"$REPO\" --build-config \"$BUILD_CONFIG\" build show src/some_file.c"
 else
     echo "  Re-run with Make evidence to get build-aware analysis:"
     echo "    ./start.sh   (choose option 1)"
 fi
-echo "  cat $REPO/.code-intelligence/REQUIRED_INPUTS.md   # missing-evidence guidance"
+echo "  cat \"$REPO/.code-intelligence/REQUIRED_INPUTS.md\"   # missing-evidence guidance"
 echo
 echo "To activate the environment in your shell:"
 echo "  . $VENV_DIR/bin/activate"
+if [[ "$ANALYZE_STATUS" != 0 || "$REPORT_STATUS" != 0 ]]; then
+    exit 1
+fi

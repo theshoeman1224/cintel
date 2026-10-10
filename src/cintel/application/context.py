@@ -16,6 +16,7 @@ from pathlib import Path
 from cintel.application.queries import (
     FunctionCandidates,
     FunctionDetail,
+    FunctionNotFound,
     SymbolEntry,
     SymbolQueryService,
 )
@@ -71,11 +72,11 @@ class ContextService:
         *,
         file: str | None = None,
         budget: int = DEFAULT_CONTEXT_BUDGET,
-    ) -> ContextResult | FunctionCandidates:
+    ) -> ContextResult | FunctionCandidates | FunctionNotFound:
         if budget <= 0:
             raise ValueError("Context budget must be positive")
         detail = self._queries.function(app_config, name, file=file)
-        if isinstance(detail, FunctionCandidates):
+        if isinstance(detail, (FunctionCandidates, FunctionNotFound)):
             return detail
         with storage_session(
             self._storage_factory, app_config.database_path

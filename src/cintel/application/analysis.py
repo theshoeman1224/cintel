@@ -14,6 +14,7 @@ from cintel.domain.diagnostics import (
     DiagnosticSeverity,
     Recoverability,
 )
+from cintel.domain.errors import ConfigurationError
 from cintel.domain.models import (
     AnalysisCapability,
     AnalysisRunSummary,
@@ -97,7 +98,19 @@ class SourceAnalysisService:
         build_configuration_name: str | None = None,
         force: bool = False,
     ) -> AnalysisRunSummary:
-        scan = self._scanner.scan(app_config).scan
+        scan_result = self._scanner.scan(app_config)
+        blocking = [
+            item
+            for item in scan_result.scan.diagnostics
+            if item.severity is DiagnosticSeverity.ERROR
+        ]
+        if blocking:
+            # Fail before opening storage so a bad path never gets a workspace.
+            raise ConfigurationError(
+                f"Repository root is not scannable: {app_config.repository_root}. "
+                f"{blocking[0].message}"
+            )
+        scan = scan_result.scan
         repository_id = scan.repository.id
         with storage_session(
             self._storage_factory, app_config.database_path

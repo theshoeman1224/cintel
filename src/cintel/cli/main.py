@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from enum import IntEnum
 from pathlib import Path
 
 from cintel.application import parse_assignments, parse_path_placeholders
-from cintel.application.queries import FunctionCandidates
+from cintel.application.queries import FunctionCandidates, FunctionNotFound
 from cintel.cli.presentation import (
     render_analysis,
     render_build_discovery,
@@ -25,7 +27,7 @@ from cintel.cli.presentation import (
 )
 from cintel.composition import create_application
 from cintel.configuration.loader import default_config, load_config
-from cintel.domain.errors import CintelError
+from cintel.domain.errors import CintelError, ConfigurationError
 from cintel.domain.models import InputArtifactType, WorkflowStatus
 from cintel.utilities.secrets import redact_assignment_arguments
 
@@ -36,26 +38,94 @@ class ExitCode(IntEnum):
     FAILURE = 2
 
 
+def _positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cintel",
         description="Offline-first intelligence for legacy C repositories.",
+        epilog=(
+            "Global options such as --repository and --config must come before "
+            "the subcommand, for example: cintel --repository ./src scan. "
+            "Run 'cintel <command> --help' for command-specific options."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--repository", type=Path, help="Repository root")
-    parser.add_argument("--config", type=Path, help="Path to config.toml")
-    parser.add_argument("--output-directory", type=Path, help="Generated-output directory")
-    parser.add_argument("--non-interactive", action="store_true")
-    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--repository",
+        type=Path,
+        help="Repository root; defaults to the current directory",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="Path to config.toml; overrides --repository and --output-directory",
+    )
+    parser.add_argument(
+        "--output-directory",
+        type=Path,
+        help="Generated-output directory; overrides the configured location",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Do not prompt before Makefile evaluation",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print extra progress detail to standard error",
+    )
     parser.add_argument("--json", action="store_true", help="Render machine-readable output")
-    parser.add_argument("--makefile", type=Path)
-    parser.add_argument("--make-working-directory", type=Path)
-    parser.add_argument("--target")
-    parser.add_argument("--make-var", action="append", default=[], metavar="NAME=value")
-    parser.add_argument("--env", action="append", default=[], metavar="NAME=value")
-    parser.add_argument("--build-config", default="default")
-    parser.add_argument("--force-build-discovery", action="store_true")
-    parser.add_argument("--respect-make-timestamps", action="store_true")
-    parser.add_argument("--input-file", type=Path)
+    parser.add_argument(
+        "--makefile", type=Path, help="Makefile path relative to the working directory"
+    )
+    parser.add_argument(
+        "--make-working-directory", type=Path, help="Directory where Make runs"
+    )
+    parser.add_argument(
+        "--target", help="Make target to evaluate; defaults to the Makefile default"
+    )
+    parser.add_argument(
+        "--make-var",
+        action="append",
+        default=[],
+        metavar="NAME=value",
+        help="Make variable assignment; repeatable",
+    )
+    parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="NAME=value",
+        help="Environment override for the Make run; repeatable",
+    )
+    parser.add_argument(
+        "--build-config",
+        default="default",
+        help="Named build configuration (default: default)",
+    )
+    parser.add_argument(
+        "--force-build-discovery",
+        action="store_true",
+        help="Ignore a matching cached discovery result",
+    )
+    parser.add_argument(
+        "--respect-make-timestamps",
+        action="store_true",
+        help="Omit -B so Make respects existing file timestamps",
+    )
+    parser.add_argument(
+        "--input-file", type=Path, help="Evidence file to validate and import"
+    )
     parser.add_argument(
         "--input-type",
         choices=[item.value for item in InputArtifactType],
@@ -77,7 +147,15 @@ def build_parser() -> argparse.ArgumentParser:
     initialize = subcommands.add_parser(
         "init", help="Create a local .code-intelligence workspace"
     )
-    initialize.add_argument("repository_path", type=Path)
+    initialize.add_argument(
+        "repository_path",
+        type=Path,
+        nargs="?",
+        help=(
+            "Repository root to initialize; defaults to --repository or the "
+            "current directory"
+        ),
+    )
     subcommands.add_parser("doctor", help="Inspect tools, inputs, and capabilities")
     subcommands.add_parser(
         "scan", help="Inventory C sources, headers, and Make build inputs"
@@ -88,15 +166,26 @@ def build_parser() -> argparse.ArgumentParser:
     analyze = subcommands.add_parser(
         "analyze", help="Run conservative source analysis over scanned files"
     )
-    analyze.add_argument("--force-analysis", action="store_true")
+    analyze.add_argument(
+        "--force-analysis",
+        action="store_true",
+        help="Reparse every target instead of reusing unchanged results",
+    )
     build = subcommands.add_parser("build", help="Discover and inspect selected builds")
     build_commands = build.add_subparsers(dest="build_command", required=True)
-    build_commands.add_parser("discover", help="Run and parse a GNU Make dry-run")
+    build_commands.add_parser(
+        "discover",
+        help="Run and parse a GNU Make dry-run",
+        description=(
+            "Run GNU Make with -n -B and parse the output into compilation "
+            "units, or import validated evidence with --input-file."
+        ),
+    )
     build_commands.add_parser("units", help="List discovered compilation units")
     build_show = build_commands.add_parser(
         "show", help="Show compilation units for a source file"
     )
-    build_show.add_argument("source_file")
+    build_show.add_argument("source_file", help="Repository-relative source path")
     symbols = subcommands.add_parser(
         "symbols", help="List stored symbols from source analysis"
     )
@@ -111,18 +200,18 @@ def build_parser() -> argparse.ArgumentParser:
     show_function = show_commands.add_parser(
         "function", help="Show a function definition, callers, and callees"
     )
-    show_function.add_argument("name")
+    show_function.add_argument("name", help="Function name to look up")
     show_function.add_argument(
         "--file",
         help="Repository-relative path that defines the function",
     )
     callers = subcommands.add_parser("callers", help="List direct callers of a function")
-    callers.add_argument("name")
+    callers.add_argument("name", help="Function name to look up")
     callers.add_argument(
         "--file", help="Repository-relative path that defines the function"
     )
     callees = subcommands.add_parser("callees", help="List direct callees of a function")
-    callees.add_argument("name")
+    callees.add_argument("name", help="Function name to look up")
     callees.add_argument(
         "--file", help="Repository-relative path that defines the function"
     )
@@ -133,10 +222,10 @@ def build_parser() -> argparse.ArgumentParser:
     context_function = context_commands.add_parser(
         "function", help="Build a context package for a function"
     )
-    context_function.add_argument("name")
+    context_function.add_argument("name", help="Function name to package")
     context_function.add_argument(
         "--budget",
-        type=int,
+        type=_positive_int,
         default=8000,
         help="Character budget for the package (default: 8000)",
     )
@@ -161,13 +250,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return int(handler(app, args))
     except CintelError as exc:
-        print(f"cintel: {exc}", file=sys.stderr)
+        if args.json:
+            print(
+                json.dumps(
+                    {"error": {"type": type(exc).__name__, "message": str(exc)}},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(f"cintel: {exc}", file=sys.stderr)
         return int(ExitCode.FAILURE)
 
 
 def _run_init(app, args) -> int:
+    repository = args.repository_path or args.repository or Path.cwd()
     result = app.initialization.initialize(
-        args.repository_path,
+        repository,
         app.storage_factory,
         args.output_directory,
     )
@@ -192,9 +291,19 @@ def _run_scan(app, args) -> int:
 def _run_recovery(app, args) -> int:
     config = _resolve_config(args.config, args.repository, args.output_directory)
     configuration = _create_build_configuration(app, config, args)
-    if args.command == "setup" and args.input_file is None:
+    if args.command == "setup":
+        if args.input_file is not None:
+            raise ConfigurationError(
+                "cintel setup does not accept --input-file; run cintel resume "
+                "to validate and import evidence."
+            )
         result = app.recovery.setup(config, configuration)
     elif args.command == "instructions":
+        if args.input_file is not None:
+            raise ConfigurationError(
+                "cintel instructions does not accept --input-file; run cintel "
+                "resume to validate and import evidence."
+            )
         result = app.recovery.instructions(config, configuration)
     else:
         result = app.recovery.resume(
@@ -230,7 +339,7 @@ def _run_build(app, args) -> int:
     if args.build_command == "units":
         units = app.build_discovery.list_units(config, args.build_config)
         print(render_compilation_units(units, args.json))
-        return ExitCode.SUCCESS
+        return ExitCode.SUCCESS if units else ExitCode.NO_MATCH
     if args.build_command == "show":
         units = app.build_discovery.show_source(
             config, args.source_file, args.build_config
@@ -247,7 +356,7 @@ def _run_build_discover(app, config, args) -> int:
             config,
             configuration,
             args.input_file,
-            InputArtifactType.MAKE_DRY_RUN,
+            InputArtifactType(args.input_type),
             parse_path_placeholders(args.path_placeholder, "--path-placeholder"),
         )
         if recovery.build_result is None:
@@ -257,7 +366,18 @@ def _run_build_discover(app, config, args) -> int:
         return ExitCode.SUCCESS
     preview = app.build_discovery.preview(configuration)
     interactive = not args.non_interactive and sys.stdin.isatty()
-    if args.verbose or interactive:
+    print(
+        "Make evaluation command: "
+        + _redacted_command_preview(
+            preview, configuration.environment_overrides
+        ),
+        file=sys.stderr,
+    )
+    print(
+        "Warning: make -n may evaluate $(shell ...) expressions.",
+        file=sys.stderr,
+    )
+    if interactive:
         print(
             "Make evaluation command: "
             + _redacted_command_preview(
@@ -293,7 +413,7 @@ def _run_show(app, args) -> int:
     if args.show_command == "function":
         result = app.queries.function(config, args.name, file=args.file)
         print(render_function_detail(result, args.json))
-        if isinstance(result, FunctionCandidates):
+        if isinstance(result, (FunctionCandidates, FunctionNotFound)):
             return ExitCode.NO_MATCH
         return ExitCode.SUCCESS
     return ExitCode.FAILURE
@@ -302,7 +422,7 @@ def _run_show(app, args) -> int:
 def _run_function_query(app, args, query) -> int:
     config = _resolve_config(args.config, args.repository, args.output_directory)
     result = query(config, args.name, file=args.file)
-    if isinstance(result, FunctionCandidates):
+    if isinstance(result, (FunctionCandidates, FunctionNotFound)):
         print(render_function_detail(result, args.json))
         return ExitCode.NO_MATCH
     print(render_call_sites(args.name, result, args.json))
@@ -324,7 +444,7 @@ def _run_context(app, args) -> int:
             config, args.name, file=args.file, budget=args.budget
         )
         print(render_context_result(result, args.json))
-        if isinstance(result, FunctionCandidates):
+        if isinstance(result, (FunctionCandidates, FunctionNotFound)):
             return ExitCode.NO_MATCH
         return ExitCode.SUCCESS
     return ExitCode.FAILURE
@@ -369,8 +489,16 @@ def _resolve_config(
         return load_config(config_path.expanduser().resolve())
     root = (repository or Path.cwd()).expanduser().resolve()
     conventional = root / ".code-intelligence" / "config.toml"
-    if conventional.is_file() and output_directory is None:
-        return load_config(conventional)
+    if conventional.is_file():
+        config = load_config(conventional)
+        if output_directory is None:
+            return config
+        resolved = output_directory.expanduser().resolve()
+        return replace(
+            config,
+            output_directory=str(resolved),
+            database_path=str(resolved / "index.sqlite"),
+        )
     return default_config(root, output_directory)
 
 

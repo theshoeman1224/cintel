@@ -84,6 +84,7 @@ class ReportRunResult:
     repository_id: str
     reports: tuple[GeneratedReport, ...]
     diagnostics: tuple[Diagnostic, ...]
+    analysis_present: bool = True
 
 
 class ReportService:
@@ -105,7 +106,8 @@ class ReportService:
         scan_result = self._scanner.scan(app_config)
         if scan_result.markdown_report is None or scan_result.json_report is None:
             raise ConfigurationError(
-                "cintel report requires a scannable repository root"
+                f"Repository root is not scannable: {app_config.repository_root}. "
+                "Pass an existing --repository or run cintel init first."
             )
         reports = [
             GeneratedReport(
@@ -120,6 +122,11 @@ class ReportService:
             self._storage_factory, app_config.database_path
         ) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
+            # Drives the CLI hint that empty symbol and call-graph reports
+            # predate the first analyze run.
+            analysis_present = bool(
+                storage.list_source_analyses(repository_id)
+            )
             data = _gather(storage, repository_id, scan_result.scan)
             output = Path(app_config.output_directory) / "reports"
             for family in _REPORT_FAMILIES:
@@ -170,6 +177,7 @@ class ReportService:
             repository_id=repository_id,
             reports=tuple(reports),
             diagnostics=tuple(diagnostics),
+            analysis_present=analysis_present,
         )
 
 

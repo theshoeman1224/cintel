@@ -275,6 +275,9 @@ manager.
     (`adapters/storage/sqlite.py:63`) before any diagnostic can be produced.
     `doctor` reports the same condition correctly as a structured error.
 
+Status update 2026-10-10: all twelve findings above are fixed in Phase 2 of
+`docs/IMPROVEMENT_PLAN.md`, each with a regression test.
+
 ### Complexity
 
 `MarkdownReportRenderer` is 791 lines and `SQLiteAnalysisStorage` is 777.

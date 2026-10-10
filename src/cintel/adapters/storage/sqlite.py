@@ -76,7 +76,7 @@ class SQLiteAnalysisStorage:
                 )
             migrate(connection, current)
             connection.commit()
-        except sqlite3.Error as exc:
+        except (OSError, sqlite3.Error) as exc:
             raise StorageError(f"Unable to initialize {self._database_path}: {exc}") from exc
 
     def close(self) -> None:

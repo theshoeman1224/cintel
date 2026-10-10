@@ -9,6 +9,7 @@ from cintel.application.queries import (
     CallSite,
     FunctionCandidates,
     FunctionDetail,
+    FunctionNotFound,
     SymbolEntry,
     SymbolsResult,
 )
@@ -383,7 +384,9 @@ class PresentationTests(unittest.TestCase):
         text = render_compilation_units(units)
         self.assertIn("main.c", text)
         self.assertIn("Compiler: gcc", text)
-        self.assertEqual("No compilation units found.", render_compilation_units(()))
+        empty = render_compilation_units(())
+        self.assertIn("No compilation units found.", empty)
+        self.assertIn("cintel build discover", empty)
 
     def test_recovery_text_reports_status_stages_and_diagnostics(self) -> None:
         text = render_recovery(_recovery_result())
@@ -453,6 +456,7 @@ class PresentationTests(unittest.TestCase):
             "JSON report: /repo/.code-intelligence/reports/repository.json", text
         )
         self.assertIn("[CI-REPO-004] warning: A source symlink was skipped.", text)
+        self.assertIn("  Action: Inspect the symlink manually.", text)
 
     def test_scan_text_without_reports_skips_report_lines(self) -> None:
         result = replace(_scan_result(), markdown_report=None, json_report=None)
@@ -483,7 +487,9 @@ class PresentationTests(unittest.TestCase):
             "function project_value [definition] src/main.c:10 int project_value(void)",
             text,
         )
-        self.assertEqual("No symbols found.", render_symbols(SymbolsResult("repository-1", ())))
+        empty = render_symbols(SymbolsResult("repository-1", ()))
+        self.assertIn("No symbols found.", empty)
+        self.assertIn("cintel analyze", empty)
 
     def test_symbols_json_round_trips_entries(self) -> None:
         result = SymbolsResult("repository-1", (_symbol_entry(),))
@@ -522,6 +528,26 @@ class PresentationTests(unittest.TestCase):
         )
         self.assertIn("src/a.c:5", text)
         self.assertIn("src/b.c:9", text)
+
+    def test_function_not_found_reports_run_analyze_hint(self) -> None:
+        text = render_function_detail(FunctionNotFound(name="missing"))
+        self.assertIn("No function named `missing`", text)
+        self.assertIn("cintel analyze", text)
+
+    def test_context_not_found_reports_no_package_written(self) -> None:
+        text = render_context_result(FunctionNotFound(name="missing"))
+        self.assertIn("no context package was written", text)
+        self.assertIn("cintel analyze", text)
+
+    def test_report_run_hints_when_no_analysis_present(self) -> None:
+        result = replace(_report_run(), analysis_present=False)
+        text = render_report_run(result)
+        self.assertIn("No source analysis found yet", text)
+        self.assertIn("cintel analyze", text)
+
+    def test_report_run_omits_hint_when_analysis_present(self) -> None:
+        text = render_report_run(_report_run())
+        self.assertNotIn("No source analysis found yet", text)
 
     def test_call_sites_text_lists_edges_and_handles_empty_results(self) -> None:
         sites = (_call_site("main", "src/main.c", 22, "resolved"),)

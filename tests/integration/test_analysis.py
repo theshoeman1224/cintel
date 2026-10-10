@@ -73,7 +73,11 @@ class AnalysisWorkflowIntegrationTests(unittest.TestCase):
     @staticmethod
     def _run(arguments: list[str]) -> str:
         captured = io.StringIO()
-        with contextlib.redirect_stdout(captured):
+        diagnostics = io.StringIO()
+        with (
+            contextlib.redirect_stdout(captured),
+            contextlib.redirect_stderr(diagnostics),
+        ):
             exit_code = cintel_main(arguments)
         assert exit_code == 0, captured.getvalue()
         return captured.getvalue()

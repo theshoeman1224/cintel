@@ -243,7 +243,11 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
             self.assertEqual(0, scan_code)
 
             build_stdout = io.StringIO()
-            with contextlib.redirect_stdout(build_stdout):
+            build_stderr = io.StringIO()
+            with (
+                contextlib.redirect_stdout(build_stdout),
+                contextlib.redirect_stderr(build_stderr),
+            ):
                 build_code = cintel_main(
                     [
                         "--repository",

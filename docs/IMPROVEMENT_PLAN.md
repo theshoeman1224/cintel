@@ -100,49 +100,52 @@ Verification: 253 tests pass (210 unit, 43 integration), ruff and mypy clean,
 
 ## Phase 2: user-friendliness fixes
 
-Status: pending
+Status: complete (2026-10-10)
 
-Each fix lands with a test that failed before it.
+Landed, each with a regression test:
 
-- `analyze` on a missing or unscannable root propagates the scan error, exits
-  2, and never opens storage. Today it raises an uncaught `IntegrityError`
-  after creating the workspace (`application/analysis.py:100`,
-  `application/scanning.py:46-50`).
-- Workspace write failures produce a `StorageError` and exit 2 instead of an
-  uncaught `PermissionError`; `SQLiteAnalysisStorage.initialize` catches
-  `OSError` as well as `sqlite3.Error` (`adapters/storage/sqlite.py:61-80`).
-- Split not-found from ambiguous. A new `FunctionNotFound` result makes
-  `show function`, `callers`, `callees`, and `context function` tell an empty
-  index apart from duplicate definitions, with a hint to run `cintel analyze`
-  first. Exit 1 stays for empty results, per the documented contract.
-- `build units` with nothing discovered exits 1 and hints at
+- `analyze` on a missing or unscannable root raises `ConfigurationError`
+  before opening storage, so the CLI exits 2 with the scan error and no
+  workspace appears under the bad path. Previously it raised an uncaught
+  `IntegrityError` after creating the database.
+- `SQLiteAnalysisStorage.initialize` catches `OSError` as well as
+  `sqlite3.Error`, so an unwritable output directory exits 2 with
+  `Unable to initialize ...` instead of an uncaught `PermissionError`.
+- A new `FunctionNotFound` result separates an absent name from duplicate
+  definitions across `show function`, `callers`, `callees`, and
+  `context function`. Empty results still exit 1, and the message points at
+  `cintel analyze` when the index is empty. `--file` with no matching
+  definition now reports not-found rather than ambiguity.
+- `build units` with nothing discovered exits 1 and points at
   `cintel build discover`.
-- `symbols`, `report`, and `context` print prerequisite hints when no analysis
-  state exists.
-- `--budget` is validated in argparse so invalid values produce a usage error
-  instead of a traceback.
-- `build discover` honors `--input-type`; `setup` and `instructions` reject
-  `--input-file` with a message pointing at `resume`.
-- Help overhaul: help text for every option, epilogs with examples, an
-  explicit note that global options come before the subcommand, and the
-  `--build-config` default documented.
-- `--json` errors print a structured error object.
-- One shared diagnostic formatter in `cli/presentation.py` that includes
-  `suggested_actions`, used by scan, build, analysis, and report renderers.
+- `symbols` and `report` print a `cintel analyze` hint when no analysis state
+  exists. `ReportRunResult` gained `analysis_present`, and the report text
+  warns before readers rely on empty symbol and call-graph families.
+- `--budget` is validated by argparse, so zero and non-numeric values produce
+  a usage error instead of a traceback.
+- `build discover --input-file` honors `--input-type`. `setup` and
+  `instructions` reject `--input-file` with a message pointing at `resume`.
+- Help text covers every previously bare option, the `--build-config` default,
+  and every positional. A top-level epilog states that global options come
+  before the subcommand.
+- `--json` errors print a structured `{"error": {...}}` object instead of
+  plain stderr text.
+- Scan, build, analysis, and report renderers share one diagnostic formatter
+  that includes `suggested_actions` as `Action:` lines.
 - Non-TTY `make -n` always prints the evaluation command and the
-  `$(shell ...)` warning to stderr.
-- `_resolve_config`: `--config` wins; `--output-directory` overrides a loaded
-  conventional config instead of discarding it.
-- `init` accepts a fallback repository from `--repository` or the current
-  directory when the positional is omitted.
-- `start.sh`: quote `$REPO` in next steps, fall back to file-scoped analysis
-  when Make discovery fails, guard option 2, and stop swallowing analyze and
-  report failures. Also rebuild the venv when its interpreter or pip is
-  unhealthy; a system Python upgrade left this checkout's venv with a 3.14
-  interpreter and 3.12 site-packages, and the current reuse check accepted it.
+  `$(shell ...)` warning to stderr, not only with `--verbose`.
+- `_resolve_config` lets `--output-directory` override a loaded conventional
+  config instead of discarding the config.
+- `init` accepts `--repository` or the current directory when the positional
+  is omitted.
+- `start.sh`: quotes repository paths in next steps, falls back to file-scoped
+  analysis when Make discovery or evidence import fails, surfaces analyze and
+  report exit codes instead of swallowing them, avoids the `head` pipe under
+  `pipefail`, and rebuilds the venv when its pip is unhealthy. The last one
+  came from this checkout's own broken venv after a system Python upgrade.
 
-Verification: suite green, `ruff` and `mypy` clean, manual CLI pass over the
-fixture for each changed command.
+Verification: 272 tests pass (220 unit, 52 integration), ruff and mypy clean,
+`tests/fixtures/complex_c_project` untouched.
 
 ## Phase 3: complexity reduction
 

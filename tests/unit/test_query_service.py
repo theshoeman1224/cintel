@@ -9,6 +9,7 @@ from cintel.application.analysis import SourceAnalysisService
 from cintel.application.queries import (
     FunctionCandidates,
     FunctionDetail,
+    FunctionNotFound,
     SymbolQueryService,
 )
 from cintel.application.scanning import ScanWorkflowResult
@@ -210,17 +211,25 @@ class SymbolQueryServiceTests(unittest.TestCase):
             site.function_name for site in same_file_static.callers
         ))
 
-    def test_unknown_names_return_empty_candidates(self) -> None:
+    def test_unknown_names_return_not_found(self) -> None:
         self._write_source("main.c", "int main(void) { return 0; }\n")
         self._analyze()
 
         detail = self.queries.function(self.app_config, "missing")
-        self.assertIsInstance(detail, FunctionCandidates)
-        assert isinstance(detail, FunctionCandidates)
-        self.assertEqual((), detail.candidates)
+        self.assertIsInstance(detail, FunctionNotFound)
+        assert isinstance(detail, FunctionNotFound)
+        self.assertEqual("missing", detail.name)
 
         sites = self.queries.callers(self.app_config, "missing")
-        self.assertIsInstance(sites, FunctionCandidates)
+        self.assertIsInstance(sites, FunctionNotFound)
+
+        callees = self.queries.callees(self.app_config, "missing")
+        self.assertIsInstance(callees, FunctionNotFound)
+
+        wrong_file = self.queries.function(
+            self.app_config, "main", file="other.c"
+        )
+        self.assertIsInstance(wrong_file, FunctionNotFound)
 
         listing = self.queries.symbols(self.app_config, name="missing")
         self.assertEqual((), listing.entries)

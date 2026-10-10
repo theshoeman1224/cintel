@@ -13,11 +13,13 @@ from cintel.application.initialization import InitializationResult
 from cintel.application.queries import (
     FunctionCandidates,
     FunctionDetail,
+    FunctionNotFound,
     SymbolEntry,
     SymbolsResult,
 )
 from cintel.application.reports import ReportRunResult
 from cintel.application.scanning import ScanWorkflowResult
+from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
     BuildDiscoveryResult,
     CompilationUnit,
@@ -92,9 +94,7 @@ def render_scan(result: ScanWorkflowResult, as_json: bool = False) -> str:
     if result.json_report:
         lines.append(f"JSON report: {result.json_report}")
     for diagnostic in scan.diagnostics:
-        lines.append(
-            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
-        )
+        lines.extend(_diagnostic_lines(diagnostic))
     return "\n".join(lines)
 
 
@@ -122,9 +122,7 @@ def render_build_discovery(
         f"Source: {'cache' if result.from_cache else 'Make dry-run'}",
     ]
     for diagnostic in result.diagnostics:
-        lines.append(
-            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
-        )
+        lines.extend(_diagnostic_lines(diagnostic))
     return "\n".join(lines)
 
 
@@ -134,7 +132,10 @@ def render_compilation_units(
     if as_json:
         return _json(units)
     if not units:
-        return "No compilation units found."
+        return (
+            "No compilation units found. Run `cintel build discover` first "
+            "if build evidence has not been imported."
+        )
     lines: list[str] = []
     for unit in units:
         invocation = unit.compiler_invocation
@@ -180,9 +181,7 @@ def render_analysis(result: AnalysisRunSummary, as_json: bool = False) -> str:
         + (", ".join(result.recursive_functions) if result.recursive_functions else "none"),
     ]
     for diagnostic in result.diagnostics:
-        lines.append(
-            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
-        )
+        lines.extend(_diagnostic_lines(diagnostic))
     return "\n".join(lines)
 
 
@@ -215,17 +214,27 @@ def render_symbols(result: SymbolsResult, as_json: bool = False) -> str:
     if as_json:
         return _json(result)
     if not result.entries:
-        return "No symbols found."
+        return (
+            "No symbols found. Run `cintel analyze` first if source analysis "
+            "has not run, or adjust the name or --kind filter."
+        )
     lines = [f"Symbols: {len(result.entries)}"]
     lines.extend(_symbol_line(entry) for entry in result.entries)
     return "\n".join(lines)
 
 
 def render_function_detail(
-    result: FunctionDetail | FunctionCandidates, as_json: bool = False
+    result: FunctionDetail | FunctionCandidates | FunctionNotFound,
+    as_json: bool = False,
 ) -> str:
     if as_json:
         return _json(result)
+    if isinstance(result, FunctionNotFound):
+        return (
+            f"No function named `{result.name}` found in the stored index. "
+            "Run `cintel analyze` first if source analysis has not run, or "
+            "check the spelling."
+        )
     if isinstance(result, FunctionCandidates):
         return _render_candidates(result)
     lines = [
@@ -289,10 +298,17 @@ def _symbol_line(entry: SymbolEntry) -> str:
 
 
 def render_context_result(
-    result: ContextResult | FunctionCandidates, as_json: bool = False
+    result: ContextResult | FunctionCandidates | FunctionNotFound,
+    as_json: bool = False,
 ) -> str:
     if as_json:
         return _json(result)
+    if isinstance(result, FunctionNotFound):
+        return (
+            f"No function named `{result.name}` found in the stored index; no "
+            "context package was written. Run `cintel analyze` first if source "
+            "analysis has not run."
+        )
     if isinstance(result, FunctionCandidates):
         return _render_candidates(result)
     package = result.package
@@ -319,10 +335,21 @@ def render_report_run(result: ReportRunResult, as_json: bool = False) -> str:
     for report in result.reports:
         lines.append(f"  {report.report_name} [{report.format}]: {report.path}")
     for diagnostic in result.diagnostics:
+        lines.extend(_diagnostic_lines(diagnostic))
+    if not result.analysis_present:
         lines.append(
-            f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
+            "No source analysis found yet; run `cintel analyze` before relying "
+            "on the symbol, call graph, and include reports."
         )
     return "\n".join(lines)
+
+
+def _diagnostic_lines(diagnostic: Diagnostic) -> list[str]:
+    lines = [
+        f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
+    ]
+    lines.extend(f"  Action: {action}" for action in diagnostic.suggested_actions)
+    return lines
 
 
 def _json(value: Any) -> str:
