@@ -210,28 +210,38 @@ Verification: 275 tests pass (223 unit, 52 integration), ruff and mypy clean.
 
 ## Phase 5: documentation sync and redesign brief
 
-Status: pending
+Status: complete (2026-10-10)
 
-- Fix `README.md`: the fixture section, guided recovery tense, a current
-  command list, an exit-code section, and the global-option placement rule.
-- Update `docs/CURRENT_CAPABILITIES_AND_MVP_ROADMAP.md` with the new test
-  count and remove the stale audit items at lines 481-495. Update
-  `.portfolio/architecture.md` so its data flow covers analysis, queries,
-  context, and reports.
-- New `docs/CLI_REDESIGN_BRIEF.md` covering the future full redesign: global
-  options accepted after subcommands via argparse parents, a `cintel status`
-  command, auto-run versus hint decisions for prerequisites, a unified JSON
-  envelope with error objects, config precedence rules, a naming pass across
-  `show`, `symbols`, and `build`, an interactive wizard beyond `start.sh`, and
-  shell completion. The brief stays a design document until the maintainer
-  picks it up.
+Landed:
 
-Verification: docs match behavior; no code changes.
+- `README.md`: the opening summary describes the implemented tool instead of
+  a phase history; the example-repository section points at the real fixture
+  and shows a full pass against a copy; a command reference table and an
+  exit-code and output section were added; the global-option placement rule
+  is stated; the Make preview wording matches the current behavior; the
+  `setup`/`instructions` `--input-file` rejection is documented; the stale
+  "planned" recovery section was replaced with an offline-behavior note; and
+  schema v6 appears in the configuration section.
+- `docs/CURRENT_CAPABILITIES_AND_MVP_ROADMAP.md`: the stale audit-correction
+  list is replaced by a resolved status, the "recommended next phase" section
+  now points at Phase 7, the functional-gap bullet no longer claims pending
+  Phase 6 work, and the final hardening list dropped the completed README
+  reconciliation.
+- `.portfolio/architecture.md`: the data flow now covers source analysis,
+  queries, context packages, and report families.
+- New `docs/CLI_REDESIGN_BRIEF.md`: argparse parent parsers for option
+  placement, a `cintel status` command, the prerequisite policy table, a
+  versioned JSON envelope, config precedence, the naming pass, an interactive
+  setup wizard, static shell completion, and the compatibility rules. It
+  stays a design document until picked up.
+
+Verification: docs match behavior; no code changes; suite, ruff, and mypy
+unchanged at 275 tests.
 
 ## Definition of done
 
-All six phases landed, suite green throughout, fixture untouched, ruff and
-mypy clean, and the docs describe the tool as it actually behaves. The
-codebase then has two mega-classes split by job, failure paths covered by
-tests, a written CLI redesign direction, and enough module-level documentation
-for an agent to navigate without reading every file.
+All six phases landed on 2026-10-10. Suite green throughout, fixture
+untouched, ruff and mypy clean at 275 tests. The two mega-classes are split by
+job, failure paths are covered by tests, the CLI redesign direction is written
+down in `docs/CLI_REDESIGN_BRIEF.md`, and the module-level documentation is
+enough for an agent to navigate without reading every file.

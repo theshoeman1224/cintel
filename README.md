@@ -1,17 +1,13 @@
 # Legacy C Code Intelligence
 
 Legacy C Code Intelligence (`cintel`) is an offline-first command-line
-application for turning legacy C repositories into structured, build-aware
-knowledge for developers and coding agents. The current codebase implements
-the Phase 1 foundation through Phase 4 guided recovery, the Phase 5A
-source-parser and persistence foundation, and the Phase 5B source-analysis
-workflow: initialization, environment diagnostics, recursive C/build-input
-discovery, incremental SHA-256 hashing, GNU Make dry-run build discovery,
-compiler-command normalization, validated input artifacts, resumable
-workflow state, SQLite state, conservative per-file C symbol/include/call
-extraction with deterministic cross-file resolution, incremental `cintel
-analyze`, symbol/call-graph query commands, deterministic Markdown/JSON
-inventory reports, configuration, and dependency composition.
+application that turns legacy C repositories into a structured, build-aware
+index for developers and coding agents. It initializes a local workspace,
+inspects the toolchain, inventories C and Make inputs, evaluates or imports a
+GNU Make build, normalizes compiler commands, analyzes C sources
+conservatively, answers symbol and call-graph queries, builds budgeted
+function context packages, and writes deterministic Markdown and JSON
+reports.
 
 It does not send source code externally. AI is disabled by default, and the
 deterministic analysis architecture does not depend on an AI model.
@@ -130,32 +126,75 @@ cintel --repository /path/to/legacy-c-repository \
 cintel --repository /path/to/legacy-c-repository \
   --makefile Makefile --target all --build-config debug \
   --input-file /path/to/make-dry-run.txt resume
+cintel --repository /path/to/legacy-c-repository --build-config debug analyze
+cintel --repository /path/to/legacy-c-repository show function main
+cintel --repository /path/to/legacy-c-repository report
 ```
 
-Generated state is kept under `.code-intelligence/`. `init` will not overwrite
-a configuration whose contents differ from the configuration it would create.
+Global options such as `--repository`, `--config`, and `--build-config` must
+appear before the subcommand. Generated state is kept under
+`.code-intelligence/`. `init` will not overwrite a configuration whose
+contents differ from the configuration it would create.
+
+## Command reference
+
+| Command | Purpose |
+|---|---|
+| `init [path]` | Create the workspace, configuration, and database |
+| `doctor` | Inspect tools, inputs, and capabilities |
+| `scan` | Inventory C sources, headers, and Make inputs |
+| `setup` | Assess missing evidence and write REQUIRED_INPUTS.md |
+| `instructions` | Regenerate REQUIRED_INPUTS.md |
+| `resume` | Validate supplied evidence and resume the workflow |
+| `analyze` | Parse sources and resolve relationships |
+| `build discover` | Run or import a GNU Make dry-run |
+| `build units` | List compilation units |
+| `build show <source>` | Units for one source file |
+| `symbols [name]` | List stored symbols |
+| `show function <name>` | Definition, callers, and callees |
+| `callers <name>` | Direct callers of a function |
+| `callees <name>` | Direct callees of a function |
+| `context function <name>` | Build a budgeted context package |
+| `report` | Regenerate every report family |
+
+## Exit codes and output
+
+- `0`: success.
+- `1`: the query ran but matched nothing, or a function name was ambiguous or absent.
+- `2`: an error, including configuration, storage, and validation failures.
+
+Every command accepts `--json`. Errors render as a structured
+`{"error": {...}}` object on standard output and keep the same exit codes.
+Text output includes `Action:` lines with next steps when a diagnostic
+carries them.
 
 ## Example repository
 
-A later phase will include a representative Make-based C fixture. Once
-repository scanning and build discovery are implemented, the intended workflow
-will resemble:
+`tests/fixtures/complex_c_project` is a representative Make-based C
+repository with multiple build configurations, recursive Make, generated
+inputs, wrapper commands, plugins, and saved dry-run evidence. It doubles as
+the demo in `./start.sh` and as the tool's own end-to-end test subject. Copy
+it before running the full flow so the committed fixture stays untouched:
 
 ```bash
-cintel --repository ./example scan
-cintel --repository ./example --makefile Makefile --target all build discover
-cintel --repository ./example analyze
-cintel --repository ./example report
+cp -r tests/fixtures/complex_c_project /tmp/cintel-demo
+rm -rf /tmp/cintel-demo/.code-intelligence
+cintel init /tmp/cintel-demo
+cintel --repository /tmp/cintel-demo doctor
+cintel --repository /tmp/cintel-demo scan
+cintel --repository /tmp/cintel-demo \
+  --makefile Makefile --target linux --build-config linux --non-interactive build discover
+cintel --repository /tmp/cintel-demo --build-config linux analyze
+cintel --repository /tmp/cintel-demo report
 ```
-
-`scan`, guided recovery, the three `build` subcommands, `analyze`, the
-symbol/call-graph queries, `context function`, and `report` are implemented.
 
 ## Symbol and relationship queries
 
 After `analyze`, the stored index answers read-only queries. Ambiguous
 function names (several definitions) list their candidates and exit with
-status 1; rerun with `--file <repository-relative-path>` to choose one:
+status 1; rerun with `--file <repository-relative-path>` to choose one.
+Unknown names report that the index has no such definition and point at
+`cintel analyze` when analysis has not run:
 
 ```bash
 cintel --repository ./example symbols                       # every stored symbol
@@ -260,6 +299,7 @@ unresolved by design; `reports/include_index.md` lists every unresolved target.
 `cintel instructions` regenerates that report from persisted diagnostics.
 `cintel resume` validates an optional `--input-file`, records its SHA-256 hash and
 provenance, checks it for later staleness, and continues from completed stages.
+`setup` and `instructions` reject `--input-file`; use `resume` to import evidence.
 
 Imported Make dry-run text may contain path placeholders for paths that differ
 on the machine where it will be analyzed. `--path-placeholder OLD=NEW`
@@ -301,11 +341,12 @@ programs: includes, functions, recursive invocations, variable expansion and
 Using Make preserves the build's actual evaluation semantics while the adapter
 captures and conservatively interprets its output.
 
-Important: `make -n` can still evaluate `$(shell ...)` expressions. Future
-interactive workflows preview Make evaluation commands and request
-confirmation before running them. `--non-interactive` permits Makefile
-evaluation but does not authorize mutating commands. Real builds and unknown
-generation targets are never run automatically.
+Important: `make -n` can still evaluate `$(shell ...)` expressions. Every
+`build discover` run prints the evaluation command and the `$(shell ...)`
+warning to standard error; an interactive terminal also asks for
+confirmation first. `--non-interactive` permits Makefile evaluation but does
+not authorize mutating commands. Real builds and unknown generation targets
+are never run automatically.
 
 The parser follows recursive Make entering/leaving messages, `cd directory &&
 command`, shell-aware `&&` and `;` boundaries, environment prefixes, `ccache`,
@@ -315,13 +356,7 @@ are preserved. A read-only `<compiler> --version` probe contributes available
 compiler identity to the build fingerprint; broader GCC capability probing
 remains optional future enrichment.
 
-## Guided setup and offline behavior
-
-The planned `setup`, `instructions`, and `resume` workflows will identify
-missing evidence, explain why it matters, provide an exact command and working
-directory, validate the resulting artifact, and resume from stored workflow
-state. Reduced-capability repository analysis will remain available when Make,
-GCC, generated headers, object files, or saved build logs are absent.
+## Offline behavior
 
 All deterministic analysis is local and offline. SQLite is embedded through
 Python's `sqlite3` module; no database server, Docker daemon, root privilege, or
@@ -346,7 +381,9 @@ The project uses ports and adapters:
 
 - `domain` contains immutable models, relationships, evidence, capabilities,
   and structured diagnostics.
-- `application` coordinates use cases such as initialization and doctor checks.
+- `application` coordinates the use cases: initialization, doctor, scanning,
+  build discovery, guided recovery, source analysis, symbol queries, context
+  packages, and reports.
 - `ports` defines command, build, compiler, parser, storage, rendering,
   guidance, and AI contracts.
 - `adapters` contains filesystem repository discovery and output writing,
@@ -391,9 +428,9 @@ configurations, discovery runs, raw build commands, compiler invocations, and
 compilation units. Schema v4 adds validated input artifacts and resumable
 workflow state. Schema v5 adds per-file/configuration source-analysis state,
 symbols, and relationships while parser diagnostics reuse context-scoped
-diagnostic storage. Migrations are applied
-incrementally by the storage adapter; a database newer than the application is
-rejected explicitly.
+diagnostic storage. Schema v6 adds query-projection columns for the symbol and
+call-graph queries. Migrations are applied incrementally by the storage
+adapter; a database newer than the application is rejected explicitly.
 
 ## Known MVP limitations
 

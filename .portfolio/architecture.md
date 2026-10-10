@@ -59,11 +59,19 @@ than failing the whole workflow. Imported artifacts are copied, hashed,
 validated, associated with a build configuration, checked for staleness, and
 used to resume persisted workflow stages.
 
-The source-parser foundation masks comments and literals while preserving byte
-offsets, then conservatively extracts includes, macros, declarations,
-definitions, named types, typedefs, and file-scope variables. Parser results can
-be persisted with confidence and diagnostics, but application orchestration and
-cross-file relationship resolution are not yet exposed through the CLI.
+Reports, queries, and context packages read persisted state only. Report
+families render in Markdown and JSON through per-family modules; symbol and
+call-graph queries resolve names against stored definitions; context packages
+fill sections in a fixed priority order under a character budget.
+
+Source analysis masks comments and literals while preserving byte offsets,
+then conservatively extracts includes, macros, declarations, definitions,
+named types, typedefs, and file-scope variables. The analysis service reuses
+unchanged results by source hash, compilation-unit fingerprint, and parser
+version, resolves direct calls and includes deterministically, and persists
+symbols and relationships in SQLite. The CLI exposes the stored index through
+symbol and call-graph queries, budgeted function context packages, and
+deterministic Markdown/JSON report families.
 
 ## Design Decisions
 

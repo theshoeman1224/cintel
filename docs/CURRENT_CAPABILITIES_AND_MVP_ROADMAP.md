@@ -462,9 +462,8 @@ continues.
 ### Functional gaps
 
 - Symbol/relationship query commands, deterministic function context
-  packages, and all report families including `cintel report` exist;
-  remaining Phase 6 work is the complex-fixture analysis-finding validation
-  and documentation reconciliation.
+  packages, and all report families are implemented and validated against
+  the complex fixture.
 - Call resolution is monotonic by design: an already-resolved call keeps its
   original target even when a later analysis pass introduces a competing
   definition; re-running `analyze --force-analysis` after sources change
@@ -489,66 +488,28 @@ compilation, compiler extensions, implementations in headers, generated code,
 weak symbols, assembly, link-time selection, and incomplete build environments
 will remain explicit limitations.
 
-### Audit findings to correct during subsequent work
+### Audit findings status
 
-Status update 2026-08-30: Phase 6 corrected the scan-only build-awareness
-wording and integrated persisted build state into the repository inventory
-(see below). The remaining items still stand.
+Status update 2026-10-10: every documentation and integration finding from
+the 2026-08-22 audit and the 2026-10-10 re-audit is fixed. The README
+describes the implemented recovery flow and fixture, the architecture doc
+covers analysis and report workflows, and the CLI failure paths carry
+regression tests. Remaining gaps are the functional and accuracy boundaries
+listed above, plus optional GCC enrichment in Phase 7.
 
-- Corrected in Phase 6: `repository.md` no longer remains scan-scoped; the
-  inventory now integrates persisted build discoveries, and the stale
-  scan-only build-awareness wording was replaced.
-- Parts of the README still describe the implemented guided-recovery commands
-  and complex fixture as planned future work.
-- The direct-from-checkout test command in the README assumes an editable
-  installation; without one it needs `PYTHONPATH=src`.
-- `CompilerProvider` remains an architectural seam rather than a complete
-  enrichment provider; `SourceParser` now has a Phase 5A adapter.
-- SQLite stores source symbols and relationships; Phase 6 query commands are
-  wired to the CLI, while report/context workflows are still pending.
-
-These are documentation/report integration issues or later-phase gaps; they do
-not invalidate the passing Phase 1–5A test baseline.
-
-## Recommended next phase: Phase 6, Reports, queries, and context
+## Recommended next phase: Phase 7, optional GCC enrichment
 
 ### Phase boundary
 
-Phase 5B is implemented: `cintel analyze` orchestrates the Phase 5A parser
-and persistence foundation over scanned files and discovered compilation
-units, resolves cross-file relationships deterministically, and reuses
-analysis incrementally. Phase 6 turns that stored index into developer-facing
-output; context packaging and rich report families belong there.
+The deterministic MVP through Phase 6 is implemented: initialization, scan,
+build discovery, guided recovery, conservative analysis, queries, context
+packages, and reports all work from persisted state. Phase 7 adds optional
+GCC enrichment (dependency files, preprocessing, macro collection, and
+supported dumps) without changing the deterministic baseline. The final MVP
+hardening pass follows it.
 
-### What Phase 5B delivered against its plan
-
-1. `SourceAnalysisService` selects repository files and build-aware
-   compilation units without embedding parser logic.
-2. `cintel analyze` is the Phase 5 workflow entry point (`--build-config`,
-   `--force-analysis`, `--json`).
-3. The parser and service are wired in the composition root.
-4. The parser extracts conservative direct-call candidates from function
-   bodies (control keywords and member-access dispatch excluded) plus
-   same-file variable usages.
-5. Calls resolve to a same-file static definition first, then to a single
-   repository-wide definition; ambiguous targets stay unresolved. For
-   build-configured callers, repository-wide candidates are restricted to
-   definitions in files that are members of the selected build, so excluded
-   per-platform sources cannot shadow the in-build definition.
-6. Declaration-to-definition linkage manifests through resolved call targets;
-   file-scoped symbols are never collapsed.
-7. Includes resolve using the including file's directory and compilation-unit
-   `-I` paths where possible.
-8. Entry-point reachability and direct-recursion cycles derive from the
-   resolved call graph; global-usage relationships cover same-file variables
-   (type usage remains future work).
-9. Analysis reuse keys on source hash, compilation-unit fingerprint, and
-   parser version; changed inputs reparse only their own results.
-10. Without Make evidence, every file is analyzed file-scoped so analysis
-    stays useful in reduced mode.
-
-Integration tests cover configured and unconfigured runs, incremental reuse,
-and forced reanalysis on the repository fixtures.
+The Phase 5B and Phase 6 delivery details are recorded under "Work remaining
+to create the MVP" below.
 
 ## Work remaining to create the MVP
 
@@ -600,15 +561,14 @@ repository and conservative source analysis without GCC.
 
 ### Final MVP hardening
 
-After Phases 5–7:
+After Phase 7:
 
-- reconcile README examples and capability wording with actual behavior;
 - run the complete complex fixture across Linux, embedded, tests, wrapper, and
   missing-input configurations;
 - verify clean-checkout installation and the `cintel` console entry point on
   Python 3.11;
 - verify all generated paths remain inside the configured output directory;
-- audit secret redaction across new reports and artifacts;
+- audit secret redaction across reports and artifacts;
 - verify migrations from every supported schema version;
 - verify interruption and resume at source-analysis and report stages;
 - document which imported artifact types are consumed versus merely retained;
