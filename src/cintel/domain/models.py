@@ -573,6 +573,7 @@ class AnalysisRunSummary:
     resolved_calls: int
     unresolved_calls: int
     resolved_includes: int
+    unresolved_includes: int
     entry_points: int
     unreachable_definitions: int
     recursive_functions: tuple[str, ...]

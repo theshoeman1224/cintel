@@ -181,6 +181,33 @@ class SourceAnalysisServiceTests(unittest.TestCase):
             diagnostics[0].message,
         )
 
+    def test_include_counts_separate_resolved_from_unresolved(self) -> None:
+        self._write_source(
+            "present.h", "int present_value(void);\n"
+        )
+        self._write_source(
+            "main.c",
+            '#include "present.h"\n'
+            '#include "generated/absent_header.h"\n'
+            "int main(void) { return present_value(); }\n",
+        )
+
+        summary = self._service().analyze(self.app_config)
+
+        self.assertEqual(1, summary.resolved_includes)
+        self.assertEqual(1, summary.unresolved_includes)
+        include_capability = next(
+            capability
+            for capability in summary.capabilities
+            if capability.name == "call_resolution"
+        )
+        self.assertTrue(
+            any(
+                "include directives unresolved" in evidence
+                for evidence in include_capability.evidence
+            )
+        )
+
     def test_second_run_reuses_results_until_source_changes(self) -> None:
         record = self._write_source(
             "main.c", "int entry(void) { return entry(); }\n"

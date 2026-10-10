@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 
 from cintel.cli.presentation import (
+    render_analysis,
     render_build_discovery,
     render_compilation_units,
     render_doctor,
@@ -12,6 +13,7 @@ from cintel.cli.presentation import (
 from cintel.domain.diagnostics import Diagnostic, DiagnosticSeverity
 from cintel.domain.models import (
     AnalysisCapability,
+    AnalysisRunSummary,
     BuildConfiguration,
     BuildDiscoveryResult,
     CapabilityStatus,
@@ -127,6 +129,28 @@ def _recovery_result() -> RecoveryResult:
     )
 
 
+def _analysis_summary() -> AnalysisRunSummary:
+    return AnalysisRunSummary(
+        repository_id="repository-1",
+        build_configuration_name="linux",
+        files_selected=4,
+        units_selected=3,
+        reused_results=1,
+        stored_results=3,
+        failed_results=0,
+        resolved_calls=9,
+        unresolved_calls=2,
+        resolved_includes=11,
+        unresolved_includes=1,
+        entry_points=1,
+        unreachable_definitions=3,
+        recursive_functions=("perform_retry_sequence",),
+        status=WorkflowStatus.COMPLETED,
+        capabilities=(),
+        diagnostics=(),
+    )
+
+
 class PresentationTests(unittest.TestCase):
     def test_doctor_text_lists_tools_capabilities_and_diagnostics(self) -> None:
         text = render_doctor(_doctor_report())
@@ -176,6 +200,20 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual("reduced", payload["status"])
         self.assertEqual(["repository_scan"], payload["completed_stages"])
         self.assertIsNone(payload["interrupted_stage"])
+
+    def test_analysis_text_reports_calls_and_includes_including_unresolved(self) -> None:
+        text = render_analysis(_analysis_summary())
+        self.assertIn("Source analysis: completed", text)
+        self.assertIn("Calls: 9 resolved, 2 unresolved", text)
+        self.assertIn("Includes: 11 resolved, 1 unresolved", text)
+        self.assertIn("unreachable definitions: 3", text)
+
+    def test_analysis_json_round_trips_key_fields(self) -> None:
+        payload = json.loads(render_analysis(_analysis_summary(), as_json=True))
+        self.assertEqual("linux", payload["build_configuration_name"])
+        self.assertEqual(11, payload["resolved_includes"])
+        self.assertEqual(1, payload["unresolved_includes"])
+        self.assertEqual(2, payload["unresolved_calls"])
 
     def test_json_renderings_are_deterministic(self) -> None:
         first = render_build_discovery(_build_result(), as_json=True)

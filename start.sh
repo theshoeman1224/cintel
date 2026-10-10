@@ -133,6 +133,17 @@ fi
 "$PYTHON" -m cintel --repository "$REPO" doctor
 "$PYTHON" -m cintel --repository "$REPO" scan
 
+echo
+echo "Assessing missing build evidence (cintel setup)..."
+setup_output="$("$PYTHON" -m cintel --repository "$REPO" setup 2>&1)" \
+    && SETUP_BLOCKED=false || SETUP_BLOCKED=true
+echo "$setup_output"
+if [[ "$SETUP_BLOCKED" == true ]] \
+    || { [[ "$setup_output" != "" ]] && grep -q "^\[" <<<"$setup_output"; }; then
+    echo
+    echo "Note: setup reports missing build evidence; see REQUIRED_INPUTS.md below."
+fi
+
 BUILD_CONFIG="debug"
 
 echo
@@ -162,24 +173,40 @@ case "$EVIDENCE" in
             MAKE_VARS+=("$REPLY")
         done
         echo
-        echo "Warning: 'make -n' may evaluate \$(shell ...) expressions."
-        echo "cintel will show the exact command and ask for confirmation."
-        echo
-        MAKE_ARGS=(--makefile "$MAKEFILE" --target "$TARGET" --build-config "$BUILD_CONFIG")
+        echo "Evaluated command (read-only; sets no variables):"
+        make_eval_args=(-n -B -f "$MAKEFILE" "$TARGET")
         for var in "${MAKE_VARS[@]+"${MAKE_VARS[@]}"}"; do
-            MAKE_ARGS+=(--make-var "$var")
+            make_eval_args+=("$var")
         done
-        ANALYZE_WITH_BUILD=true
-        discovery_output="$("$PYTHON" -m cintel --repository "$REPO" "${MAKE_ARGS[@]}" build discover 2>&1)" || {
-            echo "$discovery_output"
-            exit 1
-        }
-        echo "$discovery_output"
-        if grep -q "^Compiler invocations: 0" <<<"$discovery_output"; then
+        echo "  make ${make_eval_args[*]}"
+        echo
+        echo "Warning: 'make -n' may evaluate \$(shell ...) expressions."
+        prompt_value "Proceed with Makefile evaluation? [y/N]" "n"
+        if [[ ! "$REPLY" =~ ^[Yy] ]]; then
             echo
-            echo "hint: no compiler commands were found. The target may not exist."
-            echo "      Try another target, e.g.: make -n -f $MAKEFILE <target>"
-            echo "      Saved dry-run text can also be imported via choice 2."
+            echo "Build discovery skipped; analysis will be file-scoped."
+            echo "Re-run later with choice 1 or import saved evidence with choice 2."
+        else
+            MAKE_ARGS=(
+                --makefile "$MAKEFILE" --target "$TARGET"
+                --build-config "$BUILD_CONFIG" --non-interactive
+            )
+            for var in "${MAKE_VARS[@]+"${MAKE_VARS[@]}"}"; do
+                MAKE_ARGS+=(--make-var "$var")
+            done
+            ANALYZE_WITH_BUILD=true
+            discovery_output="$("$PYTHON" -m cintel --repository "$REPO" \
+                "${MAKE_ARGS[@]}" build discover 2>&1)" || {
+                echo "$discovery_output" >&2
+                exit 1
+            }
+            echo "$discovery_output"
+            if grep -q "^Compiler invocations: 0" <<<"$discovery_output"; then
+                echo
+                echo "hint: no compiler commands were found. The target may not exist."
+                echo "      Try another target, e.g.: make -n -f $MAKEFILE <target>"
+                echo "      Saved dry-run text can also be imported via choice 2."
+            fi
         fi
         ;;
     2)
@@ -206,7 +233,18 @@ case "$EVIDENCE" in
         ;;
 esac
 
-"$PYTHON" -m cintel --repository "$REPO" --build-config "$BUILD_CONFIG" analyze
+ANALYZE_ARGS=(--repository "$REPO")
+if [[ "$ANALYZE_WITH_BUILD" == true ]]; then
+    ANALYZE_ARGS+=(--build-config "$BUILD_CONFIG")
+fi
+
+analyze_output="$("$PYTHON" -m cintel "${ANALYZE_ARGS[@]}" analyze 2>&1)" || true
+echo "$analyze_output"
+
+echo
+echo "Regenerating reports (cintel report)..."
+report_output="$("$PYTHON" -m cintel --repository "$REPO" report 2>&1)" || true
+echo "$report_output"
 
 # ---------------------------------------------------------------------------
 # 6. Wrap-up
@@ -214,6 +252,19 @@ esac
 section "Done"
 
 echo "Generated state: $REPO/.code-intelligence/"
+echo
+echo "Findings:"
+if [[ "$analyze_output" != "" ]] && grep -q "^\[" <<<"$analyze_output"; then
+    echo "Diagnostics reported during analysis:"
+    grep "^\[" <<<"$analyze_output" | sed 's/^/  /'
+    echo
+    echo "Full index: $REPO/.code-intelligence/reports/diagnostics_index.md"
+    echo
+fi
+echo "  Diagnostics:        reports/diagnostics_index.md"
+echo "  Includes (resolved/unresolved): reports/include_index.md"
+echo "  Call graph:         reports/call_graph.md"
+echo "  Missing-evidence guidance: REQUIRED_INPUTS.md"
 echo
 echo "Next steps:"
 if $ANALYZE_WITH_BUILD; then

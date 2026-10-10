@@ -55,11 +55,14 @@ PYTHONPATH=src python3 -m cintel --help
 PYTHONPATH=src python3 -m cintel build --help
 ```
 
-Result (re-verified 2026-08-30 after Phase 6):
+Result (re-verified 2026-10-09 after Phase 6 and the first-run findings pass):
 
-- 177 tests passed: 145 unit and 32 integration, including the live complex
+- 190 tests passed: 158 unit and 32 integration, including the live complex
   fixture build, the cleanup-effort safety nets, the analysis workflow tests,
   and the new Phase 6 query, context, report, and migration suites.
+- The analysis summary now tracks unresolved include directives end to end:
+  `AnalysisRunSummary.unresolved_includes`, the call-resolution capability
+  evidence, the `analyze` text/JSON render, and unit/integration assertions.
 - New Phase 6 suites cover schema v6 migrations with projection backfill from
   v2/v3/v4/v5 snapshots, the storage query methods, the symbol query service
   (disambiguation, callers/callees, deduplication), the context service
@@ -83,6 +86,12 @@ Result (re-verified 2026-08-30 after Phase 6):
   (28 passed, 0 missing, 4 heuristic, 2 unsupported by design).
 - A parser smoke test processed all 37 C/header files in the complex fixture
   without crashing.
+- The `start.sh` first run now also executes `cintel setup` (failure-tolerant,
+  because a fully missing-evidence run reports `PENDING`) and `cintel report`
+  after analysis, omits `--build-config` when the user skips build evidence,
+  and closes with a findings summary pointing at `REQUIRED_INPUTS.md` and the
+  `reports/diagnostics_index.md`, `reports/include_index.md`, and
+  `reports/call_graph.md` reports, echoing any analysis diagnostics.
 - The package has no runtime third-party dependencies.
 - Only `src/cintel/adapters/commands/subprocess_runner.py` imports
   `subprocess`.

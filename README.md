@@ -30,9 +30,12 @@ The script sets up the `.venv` virtual environment, installs the project,
 optionally runs the test suite, then walks through a first analysis: it asks
 for a repository path (the built-in fixture works as a demo), chooses between
 a live Make dry-run, an imported evidence file, or file-scoped analysis, and
-runs `init`, `doctor`, `scan`, `build discover`/`resume`, and `analyze`. It is
-safe to re-run; existing virtualenvs, workspaces, and analysis state are
-reused.
+runs `init`, `doctor`, `scan`, `setup`, `build discover`/`resume`, `analyze`, and
+`report`. After analysis it prints a findings summary pointing at
+`REQUIRED_INPUTS.md` and the generated report families
+(`reports/diagnostics_index.md`, `reports/include_index.md`,
+`reports/call_graph.md`). It is safe to re-run; existing virtualenvs,
+workspaces, and analysis state are reused.
 
 ### Manual installation
 
@@ -230,6 +233,11 @@ headers, then resolves relationships deterministically:
 
 Without a build configuration, every file is analyzed file-scoped, so
 analysis works when Make evidence is unavailable.
+
+The summary reports both sides of each relationship count: `Calls: N resolved,
+M unresolved` and `Includes: N resolved, M unresolved`. System headers, absent
+generated headers, and macros the conservative parser cannot verify appear as
+unresolved by design; `reports/include_index.md` lists every unresolved target.
 
 ## Guided recovery and saved inputs
 

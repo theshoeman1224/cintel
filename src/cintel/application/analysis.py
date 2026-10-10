@@ -50,11 +50,32 @@ class _Target:
 
 
 @dataclass(frozen=True, slots=True)
+class _RelationshipCounts:
+    resolved_calls: int
+    unresolved_calls: int
+    resolved_includes: int
+    unresolved_includes: int
+
+    @classmethod
+    def zero(cls) -> "_RelationshipCounts":
+        return cls(0, 0, 0, 0)
+
+    def __add__(self, other: "_RelationshipCounts") -> "_RelationshipCounts":
+        return _RelationshipCounts(
+            self.resolved_calls + other.resolved_calls,
+            self.unresolved_calls + other.unresolved_calls,
+            self.resolved_includes + other.resolved_includes,
+            self.unresolved_includes + other.unresolved_includes,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class _ResolutionOutcome:
     changed_results: dict[tuple[str, str | None], SourceAnalysisResult]
     resolved_calls: int
     unresolved_calls: int
     resolved_includes: int
+    unresolved_includes: int
 
 
 class SourceAnalysisService:
@@ -124,7 +145,13 @@ class SourceAnalysisService:
                     storage.replace_source_analysis(outcome.changed_results[key])
                     results[key] = outcome.changed_results[key]
             else:
-                outcome = _ResolutionOutcome({}, 0, 0, 0)
+                outcome = _ResolutionOutcome(
+                    changed_results={},
+                    resolved_calls=0,
+                    unresolved_calls=0,
+                    resolved_includes=0,
+                    unresolved_includes=0,
+                )
 
             entry_points, unreachable, recursive_names = _graph_analytics(
                 results.values()
@@ -152,6 +179,7 @@ class SourceAnalysisService:
                 resolved_calls=outcome.resolved_calls,
                 unresolved_calls=outcome.unresolved_calls,
                 resolved_includes=outcome.resolved_includes,
+                unresolved_includes=outcome.unresolved_includes,
                 entry_points=entry_points,
                 unreachable=unreachable,
                 recursive_count=len(recursive_names),
@@ -168,6 +196,7 @@ class SourceAnalysisService:
             resolved_calls=outcome.resolved_calls,
             unresolved_calls=outcome.unresolved_calls,
             resolved_includes=outcome.resolved_includes,
+            unresolved_includes=outcome.unresolved_includes,
             entry_points=entry_points,
             unreachable_definitions=unreachable,
             recursive_functions=recursive_names,
@@ -323,7 +352,7 @@ def _resolve_relationships(
     }
 
     changed_results: dict[tuple[str, str | None], SourceAnalysisResult] = {}
-    resolved_calls = unresolved_calls = resolved_includes = 0
+    counts = _RelationshipCounts.zero()
 
     for key, result in sorted(results.items()):
         search_directories = _include_search_directories(
@@ -333,17 +362,19 @@ def _resolve_relationships(
             result, definitions, search_directories, files_by_absolute,
             member_file_ids,
         )
-        call_resolved, call_unresolved, includes_resolved = _count_relationships(
-            relationships
-        )
-        resolved_calls += call_resolved
-        unresolved_calls += call_unresolved
-        resolved_includes += includes_resolved
+        counts += _count_relationships(relationships)
         if result_changed:
-            changed_results[key] = replace(result, relationships=tuple(relationships))
+            changed_results[key] = replace(
+                result,
+                relationships=tuple(relationships),
+            )
 
     return _ResolutionOutcome(
-        changed_results, resolved_calls, unresolved_calls, resolved_includes
+        changed_results=changed_results,
+        resolved_calls=counts.resolved_calls,
+        unresolved_calls=counts.unresolved_calls,
+        resolved_includes=counts.resolved_includes,
+        unresolved_includes=counts.unresolved_includes,
     )
 
 
@@ -377,20 +408,23 @@ def _rebuild_relationships(
 
 def _count_relationships(
     relationships: list,
-) -> tuple[int, int, int]:
-    resolved_calls = unresolved_calls = resolved_includes = 0
+) -> _RelationshipCounts:
+    resolved_calls = unresolved_calls = 0
+    resolved_includes = unresolved_includes = 0
     for relationship in relationships:
         if isinstance(relationship, CallRelationship):
             if relationship.callee_id is not None:
                 resolved_calls += 1
             else:
                 unresolved_calls += 1
-        elif (
-            isinstance(relationship, IncludeRelationship)
-            and relationship.resolved_file_id is not None
-        ):
-            resolved_includes += 1
-    return resolved_calls, unresolved_calls, resolved_includes
+        elif isinstance(relationship, IncludeRelationship):
+            if relationship.resolved_file_id is not None:
+                resolved_includes += 1
+            else:
+                unresolved_includes += 1
+    return _RelationshipCounts(
+        resolved_calls, unresolved_calls, resolved_includes, unresolved_includes
+    )
 
 
 def _graph_analytics(
@@ -508,6 +542,7 @@ def _capabilities(
     resolved_calls: int,
     unresolved_calls: int,
     resolved_includes: int,
+    unresolved_includes: int,
     entry_points: int,
     unreachable: int,
     recursive_count: int,
@@ -541,7 +576,8 @@ def _capabilities(
             evidence=(
                 f"{resolved_calls} resolved",
                 f"{unresolved_calls} unresolved",
-                f"{resolved_includes} includes resolved",
+                f"{resolved_includes} include directives resolved",
+                f"{unresolved_includes} include directives unresolved",
             ),
         ),
         AnalysisCapability(

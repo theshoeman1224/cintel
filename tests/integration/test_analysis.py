@@ -29,6 +29,7 @@ class AnalysisWorkflowIntegrationTests(unittest.TestCase):
             self.assertEqual(0, first["units_selected"])
             self.assertEqual(3, first["stored_results"])
             self.assertGreaterEqual(first["resolved_calls"], 1)
+            self.assertGreaterEqual(first["unresolved_includes"], 1)
 
             self.assertEqual("completed", second["status"])
             self.assertEqual(3, second["reused_results"])
@@ -62,6 +63,7 @@ class AnalysisWorkflowIntegrationTests(unittest.TestCase):
             self.assertEqual("linux", analyzed["build_configuration_name"])
             self.assertGreaterEqual(analyzed["units_selected"], 15)
             self.assertGreaterEqual(analyzed["resolved_includes"], 1)
+            self.assertGreaterEqual(analyzed["unresolved_includes"], 1)
             self.assertGreaterEqual(analyzed["entry_points"], 1)
 
             forced = json.loads(
