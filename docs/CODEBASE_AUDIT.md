@@ -287,6 +287,12 @@ Both were split by job in earlier phases but never by size.
 `_definitions`. The parser and Make adapter stay as they are; earlier
 decomposition made them readable, and further splitting would be churn.
 
+Status update 2026-10-10: Phase 3 split both classes into packages, moved
+`_capabilities` into `application/analysis_capabilities.py`, and deduplicated
+the query filter. Renderer output and storage tables were verified unchanged
+against pre-change snapshots. The parser and Make adapter are untouched, as
+planned.
+
 ### Agent navigation
 
 48 of 62 modules have no module docstring. `src/cintel` contains 11 comments

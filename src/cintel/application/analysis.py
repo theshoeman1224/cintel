@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cintel.application.analysis_capabilities import analysis_capabilities
 from cintel.application.scanning import RepositoryScanService
 from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
@@ -16,10 +17,8 @@ from cintel.domain.diagnostics import (
 )
 from cintel.domain.errors import ConfigurationError
 from cintel.domain.models import (
-    AnalysisCapability,
     AnalysisRunSummary,
     CallRelationship,
-    CapabilityStatus,
     CompilationUnit,
     FileKind,
     FunctionSymbol,
@@ -27,6 +26,7 @@ from cintel.domain.models import (
     Linkage,
     RelationshipResolution,
     RepositoryFile,
+    RepositoryScan,
     SourceAnalysisResult,
     SourceAnalysisStatus,
     SourceRelationship,
@@ -79,6 +79,22 @@ class _ResolutionOutcome:
     unresolved_includes: int
 
 
+@dataclass(frozen=True, slots=True)
+class _AnalysisInputs:
+    units: tuple[CompilationUnit, ...]
+    files_by_id: dict[str, RepositoryFile]
+    include_dirs_by_unit: dict[str, tuple[str, ...]]
+    targets: list[_Target]
+
+
+@dataclass(frozen=True, slots=True)
+class _TargetOutcome:
+    results: dict[tuple[str, str | None], SourceAnalysisResult]
+    reused: int
+    stored: int
+    failed: int
+
+
 class SourceAnalysisService:
     """Orchestrates parsing, cross-file resolution, and incremental reuse."""
 
@@ -115,80 +131,23 @@ class SourceAnalysisService:
         with storage_session(
             self._storage_factory, app_config.database_path
         ) as storage:
-            units = (
-                storage.list_compilation_units(repository_id, build_configuration_name)
-                if build_configuration_name is not None
-                else ()
+            inputs = _analysis_inputs(storage, scan, build_configuration_name)
+            target_outcome = _run_targets(
+                self._parser, storage, inputs.targets, force
             )
-            files_by_id = {item.id: item for item in scan.files}
-            include_dirs_by_unit = _include_directories(units)
-            targets = _select_targets(scan.files, units)
-
-            results: dict[tuple[str, str | None], SourceAnalysisResult] = {}
-            reused = stored = failed = 0
-            for target in targets:
-                expected = self._parser.analysis_fingerprint(target.file, target.unit)
-                existing = None if force else _stored_result(storage, target)
-                if (
-                    existing is not None
-                    and existing.analysis_fingerprint == expected
-                ):
-                    results[target.key] = existing
-                    reused += 1
-                    continue
-                result = self._parser.parse(target.file, target.unit)
-                storage.replace_source_analysis(result)
-                results[target.key] = result
-                stored += 1
-                if result.status is SourceAnalysisStatus.FAILED:
-                    failed += 1
-
-            if results:
-                outcome = _resolve_relationships(
-                    results,
-                    files_by_id,
-                    include_dirs_by_unit,
-                    frozenset(
-                        unit.source_file_id
-                        for unit in units
-                        if unit.source_file_id is not None
-                    ),
-                )
-                for key in sorted(outcome.changed_results):
-                    storage.replace_source_analysis(outcome.changed_results[key])
-                    results[key] = outcome.changed_results[key]
-            else:
-                outcome = _ResolutionOutcome(
-                    changed_results={},
-                    resolved_calls=0,
-                    unresolved_calls=0,
-                    resolved_includes=0,
-                    unresolved_includes=0,
-                )
-
+            outcome = _persist_relationships(
+                storage, target_outcome.results, inputs
+            )
             entry_points, unreachable, recursive_names = _graph_analytics(
-                results.values()
+                target_outcome.results.values()
             )
-
-            diagnostics = _run_diagnostics(failed)
-            if diagnostics:
-                storage.save_diagnostics(repository_id, diagnostics, "analysis")
-            status = (
-                WorkflowStatus.REDUCED if diagnostics else WorkflowStatus.COMPLETED
-            )
-            storage.save_workflow_state(
-                WorkflowState(
-                    repository_id=repository_id,
-                    stage=WorkflowStage.SOURCE_ANALYSIS,
-                    status=status,
-                    updated_at=datetime.now(UTC),
-                )
-            )
-            capabilities = _capabilities(
-                target_count=len(targets),
-                reused=reused,
-                stored=stored,
-                failed=failed,
+            diagnostics = _run_diagnostics(target_outcome.failed)
+            status = _record_analysis_state(storage, repository_id, diagnostics)
+            capabilities = analysis_capabilities(
+                target_count=len(inputs.targets),
+                reused=target_outcome.reused,
+                stored=target_outcome.stored,
+                failed=target_outcome.failed,
                 resolved_calls=outcome.resolved_calls,
                 unresolved_calls=outcome.unresolved_calls,
                 resolved_includes=outcome.resolved_includes,
@@ -201,11 +160,11 @@ class SourceAnalysisService:
         return AnalysisRunSummary(
             repository_id=repository_id,
             build_configuration_name=build_configuration_name,
-            files_selected=len(targets),
-            units_selected=sum(1 for target in targets if target.unit),
-            reused_results=reused,
-            stored_results=stored,
-            failed_results=failed,
+            files_selected=len(inputs.targets),
+            units_selected=sum(1 for target in inputs.targets if target.unit),
+            reused_results=target_outcome.reused,
+            stored_results=target_outcome.stored,
+            failed_results=target_outcome.failed,
             resolved_calls=outcome.resolved_calls,
             unresolved_calls=outcome.unresolved_calls,
             resolved_includes=outcome.resolved_includes,
@@ -217,6 +176,100 @@ class SourceAnalysisService:
             capabilities=capabilities,
             diagnostics=diagnostics,
         )
+
+
+def _analysis_inputs(
+    storage: AnalysisStorage,
+    scan: RepositoryScan,
+    build_configuration_name: str | None,
+) -> _AnalysisInputs:
+    units = (
+        storage.list_compilation_units(scan.repository.id, build_configuration_name)
+        if build_configuration_name is not None
+        else ()
+    )
+    return _AnalysisInputs(
+        units=units,
+        files_by_id={item.id: item for item in scan.files},
+        include_dirs_by_unit=_include_directories(units),
+        targets=_select_targets(scan.files, units),
+    )
+
+
+def _run_targets(
+    parser: SourceParser,
+    storage: AnalysisStorage,
+    targets: list[_Target],
+    force: bool,
+) -> _TargetOutcome:
+    results: dict[tuple[str, str | None], SourceAnalysisResult] = {}
+    reused = stored = failed = 0
+    for target in targets:
+        expected = parser.analysis_fingerprint(target.file, target.unit)
+        existing = None if force else _stored_result(storage, target)
+        if existing is not None and existing.analysis_fingerprint == expected:
+            results[target.key] = existing
+            reused += 1
+            continue
+        result = parser.parse(target.file, target.unit)
+        storage.replace_source_analysis(result)
+        results[target.key] = result
+        stored += 1
+        if result.status is SourceAnalysisStatus.FAILED:
+            failed += 1
+    return _TargetOutcome(
+        results=results, reused=reused, stored=stored, failed=failed
+    )
+
+
+def _persist_relationships(
+    storage: AnalysisStorage,
+    results: dict[tuple[str, str | None], SourceAnalysisResult],
+    inputs: _AnalysisInputs,
+) -> _ResolutionOutcome:
+    if not results:
+        return _ResolutionOutcome(
+            changed_results={},
+            resolved_calls=0,
+            unresolved_calls=0,
+            resolved_includes=0,
+            unresolved_includes=0,
+        )
+    outcome = _resolve_relationships(
+        results,
+        inputs.files_by_id,
+        inputs.include_dirs_by_unit,
+        frozenset(
+            unit.source_file_id
+            for unit in inputs.units
+            if unit.source_file_id is not None
+        ),
+    )
+    for key in sorted(outcome.changed_results):
+        storage.replace_source_analysis(outcome.changed_results[key])
+        results[key] = outcome.changed_results[key]
+    return outcome
+
+
+def _record_analysis_state(
+    storage: AnalysisStorage,
+    repository_id: str,
+    diagnostics: tuple[Diagnostic, ...],
+) -> WorkflowStatus:
+    if diagnostics:
+        storage.save_diagnostics(repository_id, diagnostics, "analysis")
+    status = (
+        WorkflowStatus.REDUCED if diagnostics else WorkflowStatus.COMPLETED
+    )
+    storage.save_workflow_state(
+        WorkflowState(
+            repository_id=repository_id,
+            stage=WorkflowStage.SOURCE_ANALYSIS,
+            status=status,
+            updated_at=datetime.now(UTC),
+        )
+    )
+    return status
 
 
 def _select_targets(
@@ -529,82 +582,3 @@ def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:
         )
     return tuple(diagnostics)
 
-
-def _analysis_status(target_count: int, failed: int) -> CapabilityStatus:
-    if target_count == 0:
-        return CapabilityStatus.UNAVAILABLE
-    if failed:
-        return CapabilityStatus.DEGRADED
-    return CapabilityStatus.AVAILABLE
-
-
-def _call_status(resolved_calls: int, unresolved_calls: int) -> CapabilityStatus:
-    if resolved_calls == 0 and unresolved_calls == 0:
-        return CapabilityStatus.UNAVAILABLE
-    if unresolved_calls == 0:
-        return CapabilityStatus.AVAILABLE
-    return CapabilityStatus.DEGRADED
-
-
-def _capabilities(
-    *,
-    target_count: int,
-    reused: int,
-    stored: int,
-    failed: int,
-    resolved_calls: int,
-    unresolved_calls: int,
-    resolved_includes: int,
-    unresolved_includes: int,
-    entry_points: int,
-    unreachable: int,
-    recursive_count: int,
-) -> tuple[AnalysisCapability, ...]:
-    analysis_status = _analysis_status(target_count, failed)
-    call_status = _call_status(resolved_calls, unresolved_calls)
-    graph_status = (
-        CapabilityStatus.AVAILABLE
-        if definition_graph_exists(entry_points, unreachable, recursive_count)
-        else CapabilityStatus.UNAVAILABLE
-    )
-    return (
-        AnalysisCapability(
-            name="source_analysis",
-            status=analysis_status,
-            reason=(
-                "Conservative source analysis completed."
-                if analysis_status is CapabilityStatus.AVAILABLE
-                else "Some analyzed targets could not be parsed."
-            ),
-            evidence=(
-                f"{target_count} targets selected",
-                f"{reused} reused",
-                f"{stored} parsed",
-            ),
-        ),
-        AnalysisCapability(
-            name="call_resolution",
-            status=call_status,
-            reason="Direct-call candidates resolve to unique definitions.",
-            evidence=(
-                f"{resolved_calls} resolved",
-                f"{unresolved_calls} unresolved",
-                f"{resolved_includes} include directives resolved",
-                f"{unresolved_includes} include directives unresolved",
-            ),
-        ),
-        AnalysisCapability(
-            name="entry_point_reachability",
-            status=graph_status,
-            reason="Reachability and direct-recursion cycles come from resolved calls.",
-            evidence=(
-                f"{entry_points} entry points",
-                f"{unreachable} unreachable definitions",
-                f"{recursive_count} directly recursive functions",
-            ),
-        ),
-    )
-
-
-def definition_graph_exists(entry_points: int, unreachable: int, recursive: int) -> bool:
-    return bool(entry_points or unreachable or recursive)

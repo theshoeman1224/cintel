@@ -149,25 +149,43 @@ Verification: 272 tests pass (220 unit, 52 integration), ruff and mypy clean,
 
 ## Phase 3: complexity reduction
 
-Status: pending
+Status: complete (2026-10-10)
 
-- Split both renderer classes into one module per report family under
-  `adapters/reports/markdown/` and `adapters/reports/json/`, with shared table
-  and glossary helpers. Public class names stay. Verify byte-identical output
-  for all report families against a pre-change snapshot.
-- Split `SQLiteAnalysisStorage` into a package: connection handling, a
-  repository and file store, a build store, an analysis store, and a workflow
-  and report store, with a facade keeping the current class name and
-  constructor signature. Verify with an A/B dump of every table for the fixture
-  repository. No schema change.
-- Break `SourceAnalysisService.analyze` into named phases and move
-  `_capabilities` to its own module.
-- Deduplicate the function-definition filter in `application/queries.py` and
-  split `_select_definition` into collapse, not-found, and ambiguous cases.
-- Ratchet mypy: remove the `replace_fields` ignore if a clean pattern appears,
-  and keep the config unchanged otherwise.
+Landed:
 
-Verification: suite green, A/B dumps byte-identical, ruff and mypy clean.
+- `MarkdownReportRenderer` split into `adapters/reports/markdown/`, one module
+  per report family, with `shared.py` holding the table-of-contents helpers
+  (`require`, `escape`, `build_awareness_markdown`). The class keeps its name
+  and dispatch surface. The JSON renderer moved to
+  `adapters/reports/json_renderer.py` as one module instead of ten: its family
+  methods are 7 to 10 lines each, so per-family files would add navigation
+  cost without reducing complexity. This is the one deviation from the
+  original plan.
+- `SQLiteAnalysisStorage` split into `adapters/storage/sqlite/`: `base.py`
+  owns the connection and schema bootstrap, and `repository_store.py`,
+  `build_store.py`, `analysis_store.py`, and `workflow_store.py` hold the
+  methods for one aggregate each as mixins. `diagnostics.py` holds the shared
+  diagnostic read/write helpers. The facade keeps the class name, constructor
+  signature, and public methods, so composition and tests did not change.
+  No schema change.
+- `SourceAnalysisService.analyze` now orchestrates four named phases:
+  `_analysis_inputs`, `_run_targets`, `_persist_relationships`, and
+  `_record_analysis_state`. `_capabilities` moved to
+  `application/analysis_capabilities.py` together with its status helpers.
+- `application/queries.py`: `_definition_occurrences` replaces the duplicated
+  definition filter in `function()` and `_definitions`; `_candidates` replaces
+  three copies of the ambiguity result; `_select_definition` is now
+  `_group_definitions` plus `_collapse_definition`.
+- The `replace_fields` type ignore is gone. The wrapper now binds its TypeVar
+  to a `_Dataclass` protocol with `__dataclass_fields__`, which mypy accepts
+  without an ignore.
+
+Verification: 272 tests pass, ruff and mypy clean over 81 files. All ten
+Markdown families and their JSON siblings rendered byte-identical against a
+pre-change snapshot of the complex fixture. Every table in the fixture
+database was dumped before and after through a scan, query, and report
+sequence; the only differences were temporary workspace paths and the two
+timestamped repository-inventory hashes, both normalized for comparison.
 
 ## Phase 4: agent navigation
 

@@ -9,17 +9,22 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import IntEnum, StrEnum
-from typing import Any, TypeVar
+from typing import Any, ClassVar, Protocol, TypeVar
 
 from cintel.domain.diagnostics import Diagnostic
 
-_DataclassT = TypeVar("_DataclassT")
+
+class _Dataclass(Protocol):
+    # Bounds the TypeVar so mypy accepts dataclasses.replace through it.
+    __dataclass_fields__: ClassVar[dict[str, Any]]
+
+
+_DataclassT = TypeVar("_DataclassT", bound=_Dataclass)
 
 
 def replace_fields(instance: _DataclassT, **changes: Any) -> _DataclassT:
     """Typed wrapper around dataclasses.replace that preserves the concrete type."""
-    # mypy cannot bind a generic TypeVar to dataclasses.replace.
-    return replace(instance, **changes)  # type: ignore[type-var]
+    return replace(instance, **changes)
 
 
 class FileKind(StrEnum):

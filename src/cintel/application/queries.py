@@ -8,7 +8,7 @@ all stored definition ids first and deduplicates results by source location.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -127,25 +127,12 @@ class SymbolQueryService:
             occurrences = storage.find_symbols(
                 repository_id, kind="function", name=name
             )
-            definitions = [
-                item for item in occurrences if _is_function_definition(item)
-            ]
+            definitions = _definition_occurrences(occurrences, file, files_by_id)
             if not definitions:
                 return FunctionNotFound(name=name)
-            if file is not None:
-                definitions = [
-                    item
-                    for item in definitions
-                    if files_by_id[item.repository_file_id].relative_path == file
-                ]
-                if not definitions:
-                    return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
-                candidates = _deduplicate(
-                    _entry(item, files_by_id) for item in definitions
-                )
-                return FunctionCandidates(name=name, candidates=candidates)
+                return _candidates(name, definitions, files_by_id)
             definition, definition_ids = selected
             declarations = _deduplicate(
                 _entry(item, files_by_id)
@@ -179,12 +166,7 @@ class SymbolQueryService:
                 return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
-                return FunctionCandidates(
-                    name=name,
-                    candidates=_deduplicate(
-                        _entry(item, files_by_id) for item in definitions
-                    ),
-                )
+                return _candidates(name, definitions, files_by_id)
             definition, definition_ids = selected
             return self._callers(
                 storage, repository_id, definition, definition_ids, files_by_id
@@ -205,12 +187,7 @@ class SymbolQueryService:
                 return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
-                return FunctionCandidates(
-                    name=name,
-                    candidates=_deduplicate(
-                        _entry(item, files_by_id) for item in definitions
-                    ),
-                )
+                return _candidates(name, definitions, files_by_id)
             definition, definition_ids = selected
             return self._callees(
                 storage, repository_id, definition, definition_ids, files_by_id
@@ -324,14 +301,35 @@ def _definitions(
     files_by_id: dict[str, RepositoryFile],
 ) -> list[SymbolOccurrence]:
     occurrences = storage.find_symbols(repository_id, kind="function", name=name)
+    return _definition_occurrences(occurrences, file, files_by_id)
+
+
+def _definition_occurrences(
+    occurrences: Iterable[SymbolOccurrence],
+    file: str | None,
+    files_by_id: dict[str, RepositoryFile],
+) -> list[SymbolOccurrence]:
     definitions = [item for item in occurrences if _is_function_definition(item)]
-    if file is not None:
-        definitions = [
-            item
-            for item in definitions
-            if files_by_id[item.repository_file_id].relative_path == file
-        ]
-    return definitions
+    if file is None:
+        return definitions
+    return [
+        item
+        for item in definitions
+        if files_by_id[item.repository_file_id].relative_path == file
+    ]
+
+
+def _candidates(
+    name: str,
+    definitions: list[SymbolOccurrence],
+    files_by_id: dict[str, RepositoryFile],
+) -> FunctionCandidates:
+    return FunctionCandidates(
+        name=name,
+        candidates=_deduplicate(
+            _entry(item, files_by_id) for item in definitions
+        ),
+    )
 
 
 def _is_function_definition(occurrence: SymbolOccurrence) -> bool:
@@ -343,13 +341,23 @@ def _select_definition(
     definitions: list[SymbolOccurrence],
     files_by_id: dict[str, RepositoryFile],
 ) -> tuple[SymbolEntry, tuple[str, ...]] | None:
-    """Collapse per-unit duplicates of the same definition.
+    """Collapse per-unit duplicates of one definition.
 
     Returns the presented entry plus every stored symbol id belonging to that
     definition across compilation units, or ``None`` when several distinct
     definitions match the name.
     """
 
+    grouped = _group_definitions(definitions, files_by_id)
+    if len(grouped) != 1:
+        return None
+    return _collapse_definition(next(iter(grouped.values())), files_by_id)
+
+
+def _group_definitions(
+    definitions: list[SymbolOccurrence],
+    files_by_id: dict[str, RepositoryFile],
+) -> dict[tuple[str, int, str], list[SymbolOccurrence]]:
     grouped: dict[tuple[str, int, str], list[SymbolOccurrence]] = {}
     for item in definitions:
         location = item.symbol.location
@@ -357,9 +365,13 @@ def _select_definition(
         grouped.setdefault(
             (relative_path, location.line, item.symbol.name), []
         ).append(item)
-    if len(grouped) != 1:
-        return None
-    occurrences = next(iter(grouped.values()))
+    return grouped
+
+
+def _collapse_definition(
+    occurrences: list[SymbolOccurrence],
+    files_by_id: dict[str, RepositoryFile],
+) -> tuple[SymbolEntry, tuple[str, ...]]:
     entry = _entry(occurrences[0], files_by_id)
     return entry, tuple(item.symbol.id for item in occurrences)
 

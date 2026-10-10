@@ -83,6 +83,11 @@ Result (re-verified 2026-10-10 after the Phase 2 usability pass):
   adapter, and CLI dispatch, and removed dead models. Parser and Make-discovery
   outputs were verified byte-identical against pre-refactor dumps over every
   fixture sample.
+- The Phase 3 complexity pass split the Markdown renderer into per-family
+  modules and the SQLite adapter into per-aggregate stores behind one facade,
+  decomposed the analysis service, and removed the last type ignore. Report
+  output and database tables were verified unchanged against pre-change
+  snapshots.
 - The CLI exposes `init`, `doctor`, `scan`, `setup`, `instructions`, `resume`,
   `analyze`, the `build discover`, `build units`, and `build show` subcommands,
   and the Phase 6 commands `symbols`, `show function`, `callers`, `callees`,
@@ -119,8 +124,8 @@ or `PYTHONPATH=src` when run directly from a fresh checkout.
 | Compiler adapters | Partially implemented | GCC-style argument parsing and compiler version lookup exist. General GCC capability probing and enrichment do not. |
 | Repository adapter | Implemented | Filesystem discovery, exclusions, hashing, metadata, and incremental hash reuse exist. |
 | Source parser adapter | Phase 5A/5B implemented | The conservative parser implements offset-preserving masking plus symbol, call-candidate, and variable-usage extraction behind `SourceParser`; `SourceAnalysisService` orchestrates it with incremental reuse and deterministic resolution. |
-| SQLite adapter | Implemented through Phase 5A | Schema version 6 keeps the Phase 1–5 state plus source-analysis runs, symbols, and relationships, and adds denormalized query-projection columns (repository/file identity, definition flags, caller/callee ids and spellings) with matching indexes so Phase 6 queries run in SQL. Migrations backfill the projections from stored payloads. `list_build_configurations` remains a reserved port surface until Phase 6 query workflows need it. |
-| Report adapters | Implemented | Markdown and JSON renderers cover the repository inventory (with persisted build state), build selection, compilation units, function index, call graph, include index, diagnostics index, capability index, and the Markdown recovery guidance. All families dispatch on report name and reject unsupported names. |
+| SQLite adapter | Implemented through Phase 5A | Schema version 6 keeps the Phase 1–5 state plus source-analysis runs, symbols, and relationships, and adds denormalized query-projection columns (repository/file identity, definition flags, caller/callee ids and spellings) with matching indexes so Phase 6 queries run in SQL. Migrations backfill the projections from stored payloads. The adapter is now a package of per-aggregate stores (repository, build, analysis, workflow) behind one facade with an unchanged public surface. |
+| Report adapters | Implemented | Markdown and JSON renderers cover the repository inventory (with persisted build state), build selection, compilation units, function index, call graph, include index, diagnostics index, capability index, and the Markdown recovery guidance. Each Markdown family renders in its own module under `adapters/reports/markdown/`; the JSON renderer stays in one module. All families dispatch on report name and reject unsupported names. |
 | AI adapter | Implemented as disabled | The deterministic core does not depend on AI. Requests to generate AI content fail explicitly. |
 | Composition root | Implemented | Dependencies are constructed in `composition.py`; there are no global service instances. |
 
