@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable, ItemsView
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, ItemsView
 
 from cintel.application.scanning import RepositoryScanService
 from cintel.application.storage_session import storage_session
@@ -57,10 +57,10 @@ class _RelationshipCounts:
     unresolved_includes: int
 
     @classmethod
-    def zero(cls) -> "_RelationshipCounts":
+    def zero(cls) -> _RelationshipCounts:
         return cls(0, 0, 0, 0)
 
-    def __add__(self, other: "_RelationshipCounts") -> "_RelationshipCounts":
+    def __add__(self, other: _RelationshipCounts) -> _RelationshipCounts:
         return _RelationshipCounts(
             self.resolved_calls + other.resolved_calls,
             self.unresolved_calls + other.unresolved_calls,
@@ -168,7 +168,7 @@ class SourceAnalysisService:
                     repository_id=repository_id,
                     stage=WorkflowStage.SOURCE_ANALYSIS,
                     status=status,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
             )
             capabilities = _capabilities(

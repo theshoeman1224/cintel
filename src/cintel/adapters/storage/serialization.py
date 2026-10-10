@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from enum import Enum
+from typing import Literal, overload
 
 from cintel.domain.diagnostics import (
     Diagnostic,
@@ -12,6 +13,7 @@ from cintel.domain.diagnostics import (
 )
 from cintel.domain.models import (
     AnalysisCapability,
+    ArtifactValidationStatus,
     BuildConfiguration,
     BuildDiscoveryResult,
     CallRelationship,
@@ -23,11 +25,11 @@ from cintel.domain.models import (
     EvidenceKind,
     FunctionSymbol,
     GlobalUsageRelationship,
-    IncludeRelationship,
     IncludePath,
+    IncludeRelationship,
     InputArtifact,
     InputArtifactType,
-    ArtifactValidationStatus,
+    Linkage,
     MacroDefinition,
     MacroSymbol,
     PathReference,
@@ -42,7 +44,6 @@ from cintel.domain.models import (
     StalenessStatus,
     TypeSymbol,
     VariableSymbol,
-    Linkage,
 )
 from cintel.utilities.secrets import is_sensitive_name
 
@@ -359,6 +360,28 @@ def source_symbol_from_dict(kind: str, data: dict) -> SourceSymbol:
             parameters=tuple(data.get("parameters", ())),
         )
     raise ValueError(f"Unsupported source symbol kind: {kind}")
+
+
+@overload
+def source_relationship_from_dict(
+    kind: Literal["include"], data: dict
+) -> IncludeRelationship: ...
+
+
+@overload
+def source_relationship_from_dict(
+    kind: Literal["call"], data: dict
+) -> CallRelationship: ...
+
+
+@overload
+def source_relationship_from_dict(
+    kind: Literal["global_usage"], data: dict
+) -> GlobalUsageRelationship: ...
+
+
+@overload
+def source_relationship_from_dict(kind: str, data: dict) -> SourceRelationship: ...
 
 
 def source_relationship_from_dict(kind: str, data: dict) -> SourceRelationship:

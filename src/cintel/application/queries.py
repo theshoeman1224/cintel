@@ -8,11 +8,12 @@ all stored definition ids first and deduplicates results by source location.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from cintel.application.storage_session import storage_session
+from cintel.configuration.models import AppConfig
 from cintel.domain.models import (
     CallEdge,
     FunctionSymbol,
@@ -23,7 +24,6 @@ from cintel.domain.models import (
     TypeSymbol,
     VariableSymbol,
 )
-from cintel.configuration.models import AppConfig
 from cintel.ports.storage import AnalysisStorage
 from cintel.utilities.paths import stable_repository_id
 
@@ -120,7 +120,9 @@ class SymbolQueryService:
             occurrences = storage.find_symbols(
                 repository_id, kind="function", name=name
             )
-            definitions = [item for item in occurrences if item.symbol.is_definition]
+            definitions = [
+                item for item in occurrences if _is_function_definition(item)
+            ]
             if file is not None:
                 definitions = [
                     item
@@ -137,7 +139,7 @@ class SymbolQueryService:
             declarations = _deduplicate(
                 _entry(item, files_by_id)
                 for item in occurrences
-                if not item.symbol.is_definition
+                if not _is_function_definition(item)
             )
             return FunctionDetail(
                 repository_id=repository_id,
@@ -307,7 +309,7 @@ def _definitions(
     files_by_id: dict[str, RepositoryFile],
 ) -> list[SymbolOccurrence]:
     occurrences = storage.find_symbols(repository_id, kind="function", name=name)
-    definitions = [item for item in occurrences if item.symbol.is_definition]
+    definitions = [item for item in occurrences if _is_function_definition(item)]
     if file is not None:
         definitions = [
             item
@@ -315,6 +317,11 @@ def _definitions(
             if files_by_id[item.repository_file_id].relative_path == file
         ]
     return definitions
+
+
+def _is_function_definition(occurrence: SymbolOccurrence) -> bool:
+    symbol = occurrence.symbol
+    return isinstance(symbol, FunctionSymbol) and symbol.is_definition
 
 
 def _select_definition(
@@ -344,7 +351,7 @@ def _select_definition(
 
 def _files_by_id(
     storage: AnalysisStorage, repository_id: str
-) -> dict[str, object]:
+) -> dict[str, RepositoryFile]:
     return {
         item.id: item for item in storage.list_repository_files(repository_id)
     }

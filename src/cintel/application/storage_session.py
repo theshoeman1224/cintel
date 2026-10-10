@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Iterator
 
 from cintel.ports.storage import AnalysisStorage
 

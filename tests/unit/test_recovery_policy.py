@@ -1,6 +1,6 @@
 import unittest
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cintel.application.recovery_policy import (
     deduplicate_diagnostics,
@@ -27,7 +27,7 @@ def artifact() -> InputArtifact:
         command_used=("make", "-n"),
         working_directory="/repo",
         content_hash="a" * 64,
-        creation_time=datetime.now(timezone.utc),
+        creation_time=datetime.now(UTC),
         validation_status=ArtifactValidationStatus.VALID,
         validation_messages=("valid",),
         build_configuration_id="build-1",

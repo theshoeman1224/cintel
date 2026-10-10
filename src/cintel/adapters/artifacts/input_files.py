@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from cintel.adapters.artifacts.validation import validate_artifact
 from cintel.domain.errors import InputArtifactError
 from cintel.domain.models import (
     ArtifactValidationStatus,
@@ -14,7 +15,6 @@ from cintel.domain.models import (
     replace_fields,
 )
 from cintel.utilities.hashing import stable_id
-from cintel.adapters.artifacts.validation import validate_artifact
 
 
 class FileSystemInputArtifactProvider:
@@ -60,7 +60,7 @@ class FileSystemInputArtifactProvider:
             command_used=command_used,
             working_directory=working_directory,
             content_hash=digest,
-            creation_time=datetime.now(timezone.utc),
+            creation_time=datetime.now(UTC),
             validation_status=(
                 ArtifactValidationStatus.VALID if valid else ArtifactValidationStatus.INVALID
             ),

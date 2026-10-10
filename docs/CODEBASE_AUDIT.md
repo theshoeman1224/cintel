@@ -4,6 +4,7 @@
 - Audited revision: `945fca5` (`main`)
 - Scope: all of `src/cintel`, `scripts/`, `tests/` (excluding the fixture repository, see below)
 - Method: full read of every module under `src/cintel`, test-to-interface coverage mapping, baseline run of the test suite
+- Latest re-audit: 2026-10-10, post Phase 6; see "Audit 2026-10-10" at the end of this file
 
 Out of scope and untouchable: `tests/fixtures/complex_c_project`. That tree is
 cintel's own test subject. Its expected findings, Makefiles, generated inputs,
@@ -204,3 +205,113 @@ CLI flows. Interfaces with direct tests:
 
 Gaps to close before refactoring begins are listed as Phase 0 targets in
 `docs/REFACTOR_PLAN.md`.
+
+## Audit 2026-10-10: post-Phase 6 re-audit
+
+- Audited revision: `0c300de` (`main`)
+- Scope: all of `src/cintel`, `scripts/`, `tests/`; the fixture repository
+  stays out of scope and untouched
+- Method: read every module, mapped tests to interfaces, measured function
+  sizes with an AST scan, traced CLI paths for out-of-order commands, ran the
+  suite
+- Baseline: 200 tests (168 unit, 32 integration), all passing in under three
+  seconds
+
+### What still holds up
+
+The architecture survived Phase 6 without erosion. One module imports
+`subprocess`. The domain imports nothing outward. Composition builds every
+dependency per invocation. The earlier refactor's consolidations held: one
+repository-id helper, one exclusion matcher, one storage lifecycle context
+manager.
+
+### Confirmed bugs
+
+1. `cintel analyze` on a misspelled repository path exits 0, prints
+   "Source analysis: completed", and creates `.code-intelligence/index.sqlite`
+   under the typo path. `application/analysis.py:100` discards the scan
+   result's diagnostics, and the missing-root path at
+   `application/scanning.py:46-50` supplies the only error. `doctor` and
+   `report` fail correctly, so behavior is inconsistent across commands.
+2. A nonexistent function name prints
+   `Ambiguous function name: foo (0 definitions)`. `_select_definition` at
+   `application/queries.py:320-342` returns `None` for zero definitions and for
+   several, and the renderer at `cli/presentation.py:256-262` assumes
+   ambiguity. It affects `show function`, `callers`, `callees`, and
+   `context function`, and the message hides the "run analyze first" case.
+3. `build units` with nothing discovered exits 0, while `build show` and
+   `symbols` exit 1 for empty results.
+4. `context function foo --budget 0` raises `ValueError` at
+   `application/context.py:75-76` and prints a traceback; `cli/main.py:163`
+   catches only `CintelError`.
+5. `build discover --input-file` ignores `--input-type` and always passes
+   `make_dry_run` (`cli/main.py:245-252`).
+6. `setup --input-file X` silently runs the resume path and
+   `instructions --input-file X` silently ignores the flag
+   (`cli/main.py:192-206`).
+7. Global options must come before the subcommand, and no help text or README
+   line says so. `cintel doctor --repository .` fails with
+   `unrecognized arguments`.
+8. `--build-config` defaults to `"default"` invisibly. After
+   `build discover --build-config debug`, plain `cintel analyze` falls back to
+   file-scoped analysis and plain `cintel build units` lists nothing, with no
+   hint (`cli/main.py:55`, `215-223`, `230-233`).
+9. Outside a TTY, `make -n` runs with no preview and no `$(shell ...)` warning,
+   because the interactive branch requires `sys.stdin.isatty()`
+   (`cli/main.py:259-276`). `README.md:296-300` promises a preview and
+   confirmation.
+10. Nine options have no help text. `--verbose` affects only `build discover`.
+    Text renderers drop diagnostic `suggested_actions`, so scan, build,
+    analysis, and report errors carry no next steps
+    (`cli/presentation.py:90-94`, `120-123`, `178-181`, `317-320`).
+11. `start.sh` dies on a bad repository path at the unguarded `cd` (line 112),
+    exits the whole script when Make discovery fails (lines 198-202), and
+    swallows analyze and report failures (lines 241 and 246) while still
+    printing "Done".
+
+### Complexity
+
+`MarkdownReportRenderer` is 791 lines and `SQLiteAnalysisStorage` is 777.
+Both were split by job in earlier phases but never by size.
+`SourceAnalysisService.analyze` is 113 lines and `_capabilities` is 58.
+`queries.py` repeats the function-definition filter in `function()` and
+`_definitions`. The parser and Make adapter stay as they are; earlier
+decomposition made them readable, and further splitting would be churn.
+
+### Agent navigation
+
+48 of 62 modules have no module docstring. `src/cintel` contains 11 comments
+total. Ports define every contract without documentation. There is no
+`AGENTS.md` and no test enforcing import direction. `.portfolio/architecture.md`
+still says cross-file resolution "is not yet exposed through the CLI".
+
+### Test coverage
+
+Adapter and happy-path coverage is strong. The gaps are failure paths:
+corrupt or too-new SQLite, CLI exit-code contracts for error diagnostics,
+`build show`, seven of twelve presentation renderers, artifact and guidance
+error branches, output-directory permission failures, and out-of-order
+`report`, `symbols`, and `context`. The committed `coverage.xml` is stale; it
+predates Phase 6.
+
+### Documentation drift
+
+`README.md:131-144` calls the fixture future work and `README.md:310-316`
+calls guided recovery planned, both implemented long ago.
+`docs/CURRENT_CAPABILITIES_AND_MVP_ROADMAP.md:481-495` still lists README
+reconciliation as pending and claims report and context workflows are pending,
+which Phase 6 finished.
+
+### Tooling landed with this audit
+
+`pyproject.toml` now configures ruff (rules `E4`, `E7`, `E9`, `F`, `I`, `UP`,
+`B`, `SIM`, with `tests/fixtures` excluded) and mypy (`check_untyped_defs`,
+`warn_unused_ignores`, `warn_redundant_casts`, `no_implicit_optional`, over
+`src/cintel`). The first run fixed 147 mechanical findings and a set of real
+annotation bugs: undefined report-entry names in
+`adapters/reports/repository.py`, a shadowed loop variable there, an
+overly-broad `dict[str, object]` return in `application/queries.py`, missing
+symbol narrowing in queries and reports, and untyped relationship reads in
+`adapters/storage/serialization.py`, which now has `Literal` overloads. Ruff
+and mypy are clean and all 200 tests pass. `ruff format` is not adopted yet;
+86 files would change, and that mechanical diff deserves its own phase.

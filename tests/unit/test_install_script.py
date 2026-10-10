@@ -1,10 +1,9 @@
+import sys
+import unittest
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
-import sys
-import unittest
 from unittest.mock import patch
-
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
 SCRIPT_SPEC = spec_from_file_location("cintel_install_script", SCRIPT_PATH)

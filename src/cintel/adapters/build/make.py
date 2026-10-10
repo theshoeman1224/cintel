@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.domain.diagnostics import (
@@ -18,12 +18,12 @@ from cintel.domain.models import (
     BuildDiscoveryResult,
     CapabilityStatus,
     CommandClassification,
-    ProcessExitCode,
     CommandRequest,
     CommandResult,
     CommandRisk,
     CompilationUnit,
     CompilerInvocation,
+    ProcessExitCode,
     RawBuildCommand,
     replace_fields,
 )
@@ -139,7 +139,7 @@ class MakeBuildDiscovery:
             ),
             input_fingerprint=input_fingerprint,
             build_fingerprint=build_fingerprint,
-            discovered_at=datetime.now(timezone.utc),
+            discovered_at=datetime.now(UTC),
             compiler_versions=compiler_versions,
             selected_source_files=tuple(
                 sorted(

@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.parsing import ConservativeCSourceParser
@@ -10,9 +10,9 @@ from cintel.application.scanning import ScanWorkflowResult
 from cintel.configuration.models import AppConfig
 from cintel.domain.models import (
     CallRelationship,
+    RelationshipResolution,
     Repository,
     RepositoryScan,
-    RelationshipResolution,
     WorkflowStatus,
 )
 from cintel.utilities.hashing import stable_id
@@ -61,12 +61,12 @@ class SourceAnalysisServiceTests(unittest.TestCase):
                 id=repository_id,
                 root=str(self.repository_root),
                 name="repo",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             ),
             files=(),
             diagnostics=(),
             capabilities=(),
-            scanned_at=datetime.now(timezone.utc),
+            scanned_at=datetime.now(UTC),
             hashes_computed=0,
             hashes_reused=0,
         )
@@ -98,7 +98,7 @@ class SourceAnalysisServiceTests(unittest.TestCase):
                 FileKind.C_SOURCE if path.suffix == ".c" else FileKind.C_HEADER
             ),
             size=len(content),
-            modified_at=datetime.now(timezone.utc),
+            modified_at=datetime.now(UTC),
             content_sha256="0" * 64,
         )
         self.scan = RepositoryScan(
@@ -106,7 +106,7 @@ class SourceAnalysisServiceTests(unittest.TestCase):
             files=self.scan.files + (record,),
             diagnostics=(),
             capabilities=(),
-            scanned_at=datetime.now(timezone.utc),
+            scanned_at=datetime.now(UTC),
             hashes_computed=0,
             hashes_reused=0,
         )
@@ -222,7 +222,7 @@ class SourceAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(1, second.reused_results)
         self.assertEqual(0, second.stored_results)
 
-        changed = self._rewrite(record, "int entry(void) { return 0; }\n")
+        self._rewrite(record, "int entry(void) { return 0; }\n")
         third = service.analyze(self.app_config)
         self.assertEqual(1, third.stored_results)
         self.assertEqual((), third.recursive_functions)
@@ -231,13 +231,14 @@ class SourceAnalysisServiceTests(unittest.TestCase):
         path = Path(record.absolute_path)
         path.write_text(content, encoding="utf-8")
         from dataclasses import replace
+
         from cintel.utilities.hashing import sha256_text
 
         updated = replace(
             record,
             content_sha256=sha256_text(content),
             size=len(content),
-            modified_at=datetime.now(timezone.utc),
+            modified_at=datetime.now(UTC),
         )
         self.scan = RepositoryScan(
             repository=self.scan.repository,
@@ -247,7 +248,7 @@ class SourceAnalysisServiceTests(unittest.TestCase):
             ),
             diagnostics=(),
             capabilities=(),
-            scanned_at=datetime.now(timezone.utc),
+            scanned_at=datetime.now(UTC),
             hashes_computed=0,
             hashes_reused=0,
         )

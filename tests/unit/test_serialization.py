@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.storage import SQLiteAnalysisStorage
@@ -33,16 +33,16 @@ from cintel.domain.models import (
     EvidenceKind,
     FunctionSymbol,
     GlobalUsageRelationship,
+    IncludePath,
     IncludeRelationship,
     InputArtifact,
     InputArtifactType,
-    IncludePath,
     Linkage,
     MacroSymbol,
     PathReference,
-    Repository,
     RelationshipEvidence,
     RelationshipResolution,
+    Repository,
     SourceLocation,
     StalenessStatus,
     TypeSymbol,
@@ -222,7 +222,7 @@ class BuildPayloadSerializationTests(unittest.TestCase):
             capabilities=(),
             input_fingerprint="in-fp",
             build_fingerprint="build-fp",
-            discovered_at=datetime(2026, 8, 22, tzinfo=timezone.utc),
+            discovered_at=datetime(2026, 8, 22, tzinfo=UTC),
         )
         payload = sanitized_json(asdict(result), configuration)
 
@@ -281,7 +281,7 @@ class InputArtifactSerializationTests(unittest.TestCase):
             command_used=("gcc", "-E", "application.c"),
             working_directory="/repo",
             content_hash="b" * 64,
-            creation_time=datetime(2026, 8, 22, 9, 30, tzinfo=timezone.utc),
+            creation_time=datetime(2026, 8, 22, 9, 30, tzinfo=UTC),
             validation_status=ArtifactValidationStatus.VALID,
             validation_messages=("Validated preprocessed_source structure.",),
             build_configuration_id=None,
@@ -304,7 +304,7 @@ class DiagnosticPersistenceTests(unittest.TestCase):
                     id="repository-1",
                     root="/repo",
                     name="repo",
-                    created_at=datetime.now(timezone.utc),
+                    created_at=datetime.now(UTC),
                 )
             )
             original = Diagnostic(

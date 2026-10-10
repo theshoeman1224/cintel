@@ -8,8 +8,8 @@ from cintel.ports.services import (
     CompilerProvider,
     InputArtifactProvider,
     InputGuidanceProvider,
-    RepositoryDiscoveryProvider,
     ReportRenderer,
+    RepositoryDiscoveryProvider,
     SourceParser,
 )
 from cintel.ports.storage import AnalysisStorage

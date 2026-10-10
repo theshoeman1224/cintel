@@ -5,7 +5,7 @@ from __future__ import annotations
 import bisect
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.parsing.lexical import MaskIssue, mask_c_non_code
@@ -124,7 +124,7 @@ class _AnalysisScope:
                     "parser_version": PARSER_VERSION,
                 }
             ),
-            analyzed_at=datetime.now(timezone.utc),
+            analyzed_at=datetime.now(UTC),
         )
 
     def result(

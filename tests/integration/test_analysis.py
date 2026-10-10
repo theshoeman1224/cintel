@@ -7,7 +7,6 @@ from pathlib import Path
 
 from cintel.cli.main import main as cintel_main
 
-
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "complex_c_project"
 BASIC = Path(__file__).parents[1] / "fixtures" / "repositories" / "basic"
 

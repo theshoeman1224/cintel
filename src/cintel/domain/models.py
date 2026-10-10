@@ -6,10 +6,9 @@ CLI, or AI SDK dependencies.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import IntEnum, StrEnum
-from pathlib import Path
 from typing import Any, TypeVar
 
 from cintel.domain.diagnostics import Diagnostic
@@ -19,7 +18,8 @@ _DataclassT = TypeVar("_DataclassT")
 
 def replace_fields(instance: _DataclassT, **changes: Any) -> _DataclassT:
     """Typed wrapper around dataclasses.replace that preserves the concrete type."""
-    return replace(instance, **changes)
+    # mypy cannot bind a generic TypeVar to dataclasses.replace.
+    return replace(instance, **changes)  # type: ignore[type-var]
 
 
 class FileKind(StrEnum):

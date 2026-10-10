@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
+from cintel.application.scanning import RepositoryScanService
+from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
 from cintel.domain.errors import ConfigurationError
 from cintel.domain.models import (
@@ -14,8 +16,6 @@ from cintel.domain.models import (
 )
 from cintel.ports.services import BuildDiscoveryProvider
 from cintel.ports.storage import AnalysisStorage
-from cintel.application.scanning import RepositoryScanService
-from cintel.application.storage_session import storage_session
 from cintel.utilities.hashing import stable_fingerprint, stable_id
 from cintel.utilities.paths import stable_repository_id
 

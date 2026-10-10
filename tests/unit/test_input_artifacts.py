@@ -9,7 +9,6 @@ from cintel.domain.models import (
     StalenessStatus,
 )
 
-
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "complex_c_project"
 SAMPLES = FIXTURE / "expected" / "sample_inputs"
 

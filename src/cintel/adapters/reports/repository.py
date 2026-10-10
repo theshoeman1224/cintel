@@ -2,24 +2,30 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.models import (
     BuildSelectionReportData,
+    CallGraphEdge,
     CallGraphReportData,
     CapabilityIndexReportData,
+    CompilationUnitEntry,
     CompilationUnitsReportData,
     DiagnosticsReportData,
     FileKind,
+    FunctionIndexEntry,
     FunctionIndexReportData,
     GlobalUsageIndexEntry,
     GlobalUsageReportData,
+    IncludeIndexEntry,
     IncludeIndexReportData,
     RepositoryReportData,
-    RepositoryScan,
+    SymbolIndexEntry,
     SymbolIndexReportData,
 )
 
@@ -117,13 +123,14 @@ class MarkdownReportRenderer:
         lines.extend(("", "## Diagnostics", ""))
         if not scan.diagnostics:
             lines.append("No scan diagnostics.")
-        for item in scan.diagnostics:
+        for diagnostic in scan.diagnostics:
             lines.append(
-                f"- **{item.code}** ({item.severity.value}): {item.message}"
+                f"- **{diagnostic.code}** ({diagnostic.severity.value}): "
+                f"{diagnostic.message}"
             )
-            if item.technical_details:
-                lines.append(f"  - Details: {item.technical_details}")
-            for action in item.suggested_actions:
+            if diagnostic.technical_details:
+                lines.append(f"  - Details: {diagnostic.technical_details}")
+            for action in diagnostic.suggested_actions:
                 lines.append(f"  - Suggested action: {action}")
         lines.extend(("", _build_awareness_markdown(data)))
         return "\n".join(lines)
@@ -558,10 +565,13 @@ class MarkdownReportRenderer:
                     )
                     lines.append("Included:")
                     for entry in directives:
+                        # directives comes from resolved_entries, so the path is set.
+                        resolved_path = entry.resolved_path
+                        assert resolved_path is not None
                         lines.append(
                             f"- line {entry.line}: "
                             f"`{_escape(entry.included_spelling)}` → "
-                            f"`{_escape(entry.resolved_path)}`"
+                            f"`{_escape(resolved_path)}`"
                         )
                     lines.append("")
         return "\n".join(lines)
@@ -1002,7 +1012,9 @@ def _build_awareness_markdown(data: RepositoryReportData) -> str:
     return "\n".join(lines)
 
 
-_MARKDOWN_HANDLERS = {
+_MARKDOWN_HANDLERS: dict[
+    str, Callable[[MarkdownReportRenderer, Any], str]
+] = {
     "repository_inventory": MarkdownReportRenderer._repository_inventory,
     "symbol_index": MarkdownReportRenderer._symbol_index,
     "global_usage": MarkdownReportRenderer._global_usage,
@@ -1015,7 +1027,7 @@ _MARKDOWN_HANDLERS = {
     "capability_index": MarkdownReportRenderer._capability_index,
 }
 
-_JSON_HANDLERS = {
+_JSON_HANDLERS: dict[str, Callable[[JSONReportRenderer, Any], str]] = {
     "repository_inventory": JSONReportRenderer._repository_inventory,
     "symbol_index": JSONReportRenderer._symbol_index,
     "global_usage": JSONReportRenderer._global_usage,

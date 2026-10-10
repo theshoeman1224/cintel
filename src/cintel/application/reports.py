@@ -8,13 +8,14 @@ instead of aborting the remaining families.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from cintel.application.scanning import RepositoryScanService
 from cintel.application.storage_session import storage_session
+from cintel.configuration.models import AppConfig
 from cintel.domain.diagnostics import (
     Diagnostic,
     DiagnosticCode,
@@ -33,26 +34,25 @@ from cintel.domain.models import (
     DiagnosticsReportData,
     FileKind,
     FunctionIndexEntry,
-    FunctionSymbol,
     FunctionIndexReportData,
+    FunctionSymbol,
     GeneratedReportMetadata,
     GlobalUsageIndexEntry,
     GlobalUsageReportData,
     IncludeIndexEntry,
-    MacroSymbol,
-    TypeSymbol,
-    VariableSymbol,
     IncludeIndexReportData,
+    MacroSymbol,
     RepositoryFile,
     RepositoryReportData,
     RepositoryScan,
     SymbolIndexEntry,
     SymbolIndexReportData,
+    TypeSymbol,
+    VariableSymbol,
     WorkflowStage,
     WorkflowState,
     WorkflowStatus,
 )
-from cintel.configuration.models import AppConfig
 from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.services import ReportRenderer
 from cintel.ports.storage import AnalysisStorage
@@ -144,7 +144,7 @@ class ReportService:
                             format=report_format,
                             file_path=str(path.resolve()),
                             content_sha256=sha256_text(content),
-                            generated_at=datetime.now(timezone.utc),
+                            generated_at=datetime.now(UTC),
                         )
                     )
                     reports.append(
@@ -162,7 +162,7 @@ class ReportService:
                         if failed == 0
                         else WorkflowStatus.REDUCED
                     ),
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                     details=(("failed_reports", str(failed)),),
                 )
             )
@@ -286,6 +286,8 @@ def _function_index(
     selected: dict[tuple[str, int, str], FunctionIndexEntry] = {}
     for occurrence in occurrences:
         symbol = occurrence.symbol
+        if not isinstance(symbol, FunctionSymbol):
+            continue
         origin = files_by_id.get(occurrence.repository_file_id)
         relative_path = origin.relative_path if origin is not None else ""
         key = (relative_path, symbol.location.line, symbol.name)
@@ -392,11 +394,12 @@ def _global_usage(
         function = symbols.get(edge.relationship.function_id)
         variable = symbols.get(edge.relationship.variable_id or "")
         origin = files_by_id.get(edge.repository_file_id)
-        function_path = (
-            origin.relative_path
-            if origin is not None
-            else (_path_of(function) if function is not None else "")
-        )
+        if origin is not None:
+            function_path = origin.relative_path
+        elif function is not None:
+            function_path = _path_of(function) or ""
+        else:
+            function_path = ""
         entry = GlobalUsageIndexEntry(
             function=(
                 function.symbol.name

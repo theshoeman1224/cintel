@@ -1,9 +1,12 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from cintel.adapters.ai import DisabledAIProvider
-from cintel.adapters.artifacts import FileSystemArtifactWriter, FileSystemInputArtifactProvider
+from cintel.adapters.artifacts import (
+    FileSystemArtifactWriter,
+    FileSystemInputArtifactProvider,
+)
 from cintel.adapters.build import MakeBuildDiscovery
 from cintel.adapters.commands import SubprocessCommandRunner
 from cintel.adapters.compiler import (
@@ -22,8 +25,8 @@ from cintel.adapters.storage import SQLiteAnalysisStorage
 from cintel.application import (
     BuildDiscoveryService,
     DoctorService,
-    InitializationService,
     GuidedRecoveryService,
+    InitializationService,
     RepositoryScanService,
 )
 from cintel.application.analysis import SourceAnalysisService

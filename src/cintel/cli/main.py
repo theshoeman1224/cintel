@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import shlex
 import sys
+from collections.abc import Sequence
 from enum import IntEnum
 from pathlib import Path
-from typing import Sequence
 
 from cintel.application import parse_assignments, parse_path_placeholders
 from cintel.application.queries import FunctionCandidates

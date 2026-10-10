@@ -1,13 +1,12 @@
 import argparse
 import contextlib
+import importlib.util
 import io
 import shutil
 import sys
 import tempfile
 import unittest
-import importlib.util
 from pathlib import Path
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DRIVER_SCRIPT = PROJECT_ROOT / "scripts" / "fixtures.py"

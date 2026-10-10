@@ -15,7 +15,6 @@ from cintel.cli.main import main as cintel_main
 from cintel.domain.models import BuildConfiguration, CommandRequest, CommandResult
 from cintel.utilities.hashing import stable_id
 
-
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "complex_c_project"
 
 

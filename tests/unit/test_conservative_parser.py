@@ -1,7 +1,7 @@
 import hashlib
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.parsing import ConservativeCSourceParser, mask_c_non_code
@@ -102,28 +102,30 @@ class ConservativeCSourceParserTests(unittest.TestCase):
 
     def test_static_symbol_identity_is_stable_and_file_scoped(self) -> None:
         source = "static int duplicate(void) { return 1; }\n"
-        with self._parse(source, file_id="file-a") as first:
-            with self._parse(source, file_id="file-a") as repeated:
-                with self._parse(source, file_id="file-b") as second_file:
-                    first_symbol = next(
-                        item
-                        for item in first.symbols
-                        if isinstance(item, FunctionSymbol)
-                    )
-                    repeated_symbol = next(
-                        item
-                        for item in repeated.symbols
-                        if isinstance(item, FunctionSymbol)
-                    )
-                    second_symbol = next(
-                        item
-                        for item in second_file.symbols
-                        if isinstance(item, FunctionSymbol)
-                    )
+        with (
+            self._parse(source, file_id="file-a") as first,
+            self._parse(source, file_id="file-a") as repeated,
+            self._parse(source, file_id="file-b") as second_file,
+        ):
+            first_symbol = next(
+                item
+                for item in first.symbols
+                if isinstance(item, FunctionSymbol)
+            )
+            repeated_symbol = next(
+                item
+                for item in repeated.symbols
+                if isinstance(item, FunctionSymbol)
+            )
+            second_symbol = next(
+                item
+                for item in second_file.symbols
+                if isinstance(item, FunctionSymbol)
+            )
 
-                    self.assertEqual(first_symbol.id, repeated_symbol.id)
-                    self.assertNotEqual(first_symbol.id, second_symbol.id)
-                    self.assertEqual(Linkage.INTERNAL, first_symbol.linkage)
+            self.assertEqual(first_symbol.id, repeated_symbol.id)
+            self.assertNotEqual(first_symbol.id, second_symbol.id)
+            self.assertEqual(Linkage.INTERNAL, first_symbol.linkage)
 
     def test_extracts_named_aggregate_types_and_typedefs(self) -> None:
         source = (
@@ -289,7 +291,7 @@ class _ParsedSource:
             absolute_path=str(path),
             kind=FileKind.C_HEADER if self._suffix == ".h" else FileKind.C_SOURCE,
             size=path.stat().st_size,
-            modified_at=datetime.now(timezone.utc),
+            modified_at=datetime.now(UTC),
             content_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         )
         return ConservativeCSourceParser().parse(repository_file, None)

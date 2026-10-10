@@ -65,6 +65,14 @@ coverage xml
 
 Run `sonar-scanner` afterwards so the report is uploaded with the analysis.
 
+The dev extra also installs `ruff` and `mypy`:
+
+```bash
+pip install -e '.[dev]'
+ruff check src scripts tests
+mypy
+```
+
 ## Test fixtures
 
 `scripts/fixtures.py` discovers, sets up, verifies, cleans, and runs the test

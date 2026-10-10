@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Iterator
 
 from cintel.application.build_discovery import BuildDiscoveryService
 from cintel.application.recovery_policy import (
@@ -36,7 +36,11 @@ from cintel.domain.models import (
     WorkflowStatus,
 )
 from cintel.ports.artifacts import ArtifactWriter
-from cintel.ports.services import InputArtifactProvider, InputGuidanceProvider, ReportRenderer
+from cintel.ports.services import (
+    InputArtifactProvider,
+    InputGuidanceProvider,
+    ReportRenderer,
+)
 from cintel.ports.storage import AnalysisStorage
 from cintel.utilities.hashing import stable_id
 from cintel.utilities.paths import stable_repository_id
@@ -201,7 +205,7 @@ class GuidedRecoveryService:
                     format="markdown",
                     file_path=str(report_path),
                     content_sha256=hashlib.sha256(content.encode()).hexdigest(),
-                    generated_at=datetime.now(timezone.utc),
+                    generated_at=datetime.now(UTC),
                 )
             )
             states = storage.list_workflow_states(repository_id)
@@ -331,7 +335,7 @@ class GuidedRecoveryService:
                 repository_id=repository_id,
                 stage=stage,
                 status=status,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
         )
 

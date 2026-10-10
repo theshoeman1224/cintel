@@ -45,7 +45,9 @@ class GCCCompilerCommandParser:
         parsed, sources, object_file, diagnostics = _parse_arguments(
             raw_arguments, Path(working_directory), Path(repository_root)
         )
-        source_references = sources or [None]
+        source_references: list[PathReference | None] = (
+            list(sources) if sources else [None]
+        )
         invocations: list[CompilerInvocation] = []
         for source in source_references:
             identity = stable_fingerprint(

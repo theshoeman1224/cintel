@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version as distribution_version
-from pathlib import Path
 import subprocess
 import sys
 import tomllib
-
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as distribution_version
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_FILE = PROJECT_ROOT / "pyproject.toml"

@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from cintel.configuration.models import AppConfig, DEFAULT_EXCLUSIONS
+from cintel.configuration.models import DEFAULT_EXCLUSIONS, AppConfig
 from cintel.domain.errors import ConfigurationError
 
 DEFAULT_CONFIG_NAME = "config.toml"

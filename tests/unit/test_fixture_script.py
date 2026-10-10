@@ -110,7 +110,7 @@ class InterpreterValidationTests(unittest.TestCase):
 
 class ForbiddenCharacterCoverageTests(unittest.TestCase):
     def test_shell_control_characters_are_forbidden(self) -> None:
-        for character in "; & | ` $ < > ( ) { } [ ] ! * ? ~ \" ' \\".split():
+        for character in [";", "&", "|", "`", "$", "<", ">", "(", ")", "{", "}", "[", "]", "!", "*", "?", "~", '"', "'", "\\"]:
             self.assertIn(character, FIXTURES.INTERPRETER_FORBIDDEN_CHARACTERS)
 
 

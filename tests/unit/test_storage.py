@@ -2,7 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.parsing import ConservativeCSourceParser
@@ -22,14 +22,14 @@ from cintel.domain.models import (
     FunctionSymbol,
     InputArtifact,
     InputArtifactType,
+    PathReference,
     RelationshipResolution,
     Repository,
     RepositoryFile,
-    replace_fields,
-    PathReference,
     StalenessStatus,
     WorkflowState,
     WorkflowStatus,
+    replace_fields,
 )
 
 
@@ -42,7 +42,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 id="repository-1",
                 root="/repo",
                 name="repo",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             storage.save_repository(repository)
             storage.save_diagnostics(
@@ -75,7 +75,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 absolute_path="/repo/main.c",
                 kind=FileKind.C_SOURCE,
                 size=10,
-                modified_at=datetime.now(timezone.utc),
+                modified_at=datetime.now(UTC),
                 content_sha256="a" * 64,
             )
             storage.replace_repository_files(repository.id, (repository_file,))
@@ -147,7 +147,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 id="repository-1",
                 root="/repo",
                 name="repo",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             storage.save_repository(repository)
             artifact = InputArtifact(
@@ -159,7 +159,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 command_used=("make", "-n"),
                 working_directory="/repo",
                 content_hash="a" * 64,
-                creation_time=datetime.now(timezone.utc),
+                creation_time=datetime.now(UTC),
                 validation_status=ArtifactValidationStatus.VALID,
                 validation_messages=("valid",),
                 build_configuration_id="build-1",
@@ -169,7 +169,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 repository_id=repository.id,
                 stage="input_validation",
                 status=WorkflowStatus.COMPLETED,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
                 details=(("artifact", artifact.id),),
             )
             storage.save_input_artifact(artifact)
@@ -200,7 +200,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 id="repository-1",
                 root=str(root),
                 name="fixture",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             repository_file = RepositoryFile(
                 id="file-1",
@@ -209,7 +209,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 absolute_path=str(source),
                 kind=FileKind.C_SOURCE,
                 size=source.stat().st_size,
-                modified_at=datetime.now(timezone.utc),
+                modified_at=datetime.now(UTC),
                 content_sha256="a" * 64,
             )
             storage.save_repository(repository)
@@ -259,7 +259,7 @@ class SQLiteStorageTests(unittest.TestCase):
                     capabilities=(),
                     input_fingerprint="input-fingerprint",
                     build_fingerprint="build-fingerprint",
-                    discovered_at=datetime.now(timezone.utc),
+                    discovered_at=datetime.now(UTC),
                 )
             )
             parser = ConservativeCSourceParser()
@@ -313,7 +313,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 id="repository-1",
                 root=str(root),
                 name="fixture",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             repository_file = RepositoryFile(
                 id="file-1",
@@ -322,7 +322,7 @@ class SQLiteStorageTests(unittest.TestCase):
                 absolute_path=str(source),
                 kind=FileKind.C_SOURCE,
                 size=source.stat().st_size,
-                modified_at=datetime.now(timezone.utc),
+                modified_at=datetime.now(UTC),
                 content_sha256="a" * 64,
             )
             storage.save_repository(repository)

@@ -1,7 +1,7 @@
 from cintel.application.doctor import DoctorService
 from cintel.application.initialization import InitializationService
-from cintel.application.scanning import RepositoryScanService, ScanWorkflowResult
 from cintel.application.recovery import GuidedRecoveryService, parse_path_placeholders
+from cintel.application.scanning import RepositoryScanService, ScanWorkflowResult
 
 __all__ = [
     "DoctorService",

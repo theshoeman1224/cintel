@@ -1,7 +1,7 @@
 import json
 import unittest
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cintel.cli.presentation import (
     render_analysis,
@@ -105,7 +105,7 @@ def _build_result() -> BuildDiscoveryResult:
         capabilities=(),
         input_fingerprint="input-fingerprint",
         build_fingerprint="build-fingerprint",
-        discovered_at=datetime(2026, 8, 22, 12, 0, 0, tzinfo=timezone.utc),
+        discovered_at=datetime(2026, 8, 22, 12, 0, 0, tzinfo=UTC),
     )
 
 

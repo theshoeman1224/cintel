@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import fnmatch
 import os
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.domain.diagnostics import (
@@ -38,7 +37,7 @@ class FileSystemRepositoryDiscovery:
         previous_files: tuple[RepositoryFile, ...] = (),
     ) -> RepositoryScan:
         root = Path(repository_root).expanduser().resolve()
-        scanned_at = datetime.now(timezone.utc)
+        scanned_at = datetime.now(UTC)
         repository = Repository(
             id=repository_id,
             root=str(root),
@@ -181,7 +180,7 @@ def _scan_file(
         return None
     try:
         stat = absolute_path.stat()
-        modified_at = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+        modified_at = datetime.fromtimestamp(stat.st_mtime, UTC)
         old = previous.get(relative_text)
         if (
             old is not None

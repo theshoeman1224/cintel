@@ -1,11 +1,10 @@
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.storage import SCHEMA_VERSION, SQLiteAnalysisStorage
-
 
 _BASE_SCHEMA = """
 CREATE TABLE repositories (
@@ -303,7 +302,7 @@ class MigrationTests(unittest.TestCase):
         if version >= 5:
             connection.executescript(_V5_SCHEMA)
 
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         connection.execute(
             "INSERT INTO repositories (id, root, name, created_at) "
             "VALUES ('repository-1', '/repo', 'repo', ?)",

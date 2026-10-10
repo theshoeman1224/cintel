@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.parsing import ConservativeCSourceParser
@@ -60,12 +60,12 @@ class SymbolQueryServiceTests(unittest.TestCase):
                 id=repository_id,
                 root=str(self.repository_root),
                 name="repo",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             ),
             files=(),
             diagnostics=(),
             capabilities=(),
-            scanned_at=datetime.now(timezone.utc),
+            scanned_at=datetime.now(UTC),
             hashes_computed=0,
             hashes_reused=0,
         )
@@ -97,7 +97,7 @@ class SymbolQueryServiceTests(unittest.TestCase):
                 FileKind.C_SOURCE if path.suffix == ".c" else FileKind.C_HEADER
             ),
             size=len(content),
-            modified_at=datetime.now(timezone.utc),
+            modified_at=datetime.now(UTC),
             content_sha256="0" * 64,
         )
         self.scan = RepositoryScan(
@@ -105,7 +105,7 @@ class SymbolQueryServiceTests(unittest.TestCase):
             files=self.scan.files + (record,),
             diagnostics=(),
             capabilities=(),
-            scanned_at=datetime.now(timezone.utc),
+            scanned_at=datetime.now(UTC),
             hashes_computed=0,
             hashes_reused=0,
         )

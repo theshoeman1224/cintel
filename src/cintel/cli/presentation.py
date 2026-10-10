@@ -18,8 +18,12 @@ from cintel.application.queries import (
 )
 from cintel.application.reports import ReportRunResult
 from cintel.application.scanning import ScanWorkflowResult
-from cintel.domain.models import DoctorReport, RecoveryResult
-from cintel.domain.models import BuildDiscoveryResult, CompilationUnit
+from cintel.domain.models import (
+    BuildDiscoveryResult,
+    CompilationUnit,
+    DoctorReport,
+    RecoveryResult,
+)
 
 
 def render_initialization(result: InitializationResult, as_json: bool = False) -> str:
@@ -131,7 +135,7 @@ def render_compilation_units(
         return _json(units)
     if not units:
         return "No compilation units found."
-    lines = []
+    lines: list[str] = []
     for unit in units:
         invocation = unit.compiler_invocation
         source = (

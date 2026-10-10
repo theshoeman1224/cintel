@@ -6,6 +6,21 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
+from cintel.adapters.storage.migrations import SCHEMA_VERSION, migrate
+from cintel.adapters.storage.serialization import (
+    build_configuration_from_dict,
+    build_result_from_dict,
+    compilation_unit_from_dict,
+    diagnostic_from_dict,
+    diagnostic_to_dict,
+    input_artifact_from_dict,
+    json_default,
+    redact_text,
+    sanitized_json,
+    source_analysis_from_parts,
+    source_relationship_from_dict,
+    source_symbol_from_dict,
+)
 from cintel.domain.diagnostics import Diagnostic
 from cintel.domain.errors import StorageError
 from cintel.domain.models import (
@@ -36,21 +51,6 @@ from cintel.domain.models import (
     WorkflowState,
     WorkflowStatus,
 )
-from cintel.adapters.storage.serialization import (
-    build_configuration_from_dict,
-    build_result_from_dict,
-    compilation_unit_from_dict,
-    diagnostic_from_dict,
-    diagnostic_to_dict,
-    input_artifact_from_dict,
-    json_default,
-    redact_text,
-    sanitized_json,
-    source_analysis_from_parts,
-    source_relationship_from_dict,
-    source_symbol_from_dict,
-)
-from cintel.adapters.storage.migrations import SCHEMA_VERSION, migrate
 
 
 class SQLiteAnalysisStorage:

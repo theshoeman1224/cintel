@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.adapters.artifacts import (
@@ -77,7 +77,7 @@ class _RecordingBuildDiscovery:
             capabilities=(),
             input_fingerprint="input-fingerprint",
             build_fingerprint="build-fingerprint",
-            discovered_at=datetime.now(timezone.utc),
+            discovered_at=datetime.now(UTC),
         )
 
 
@@ -95,14 +95,14 @@ class GuidedRecoveryServiceTests(unittest.TestCase):
             id=stable_id("repository", str(repository_root.resolve())),
             root=str(repository_root),
             name="repo",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         scan = RepositoryScan(
             repository=repository,
             files=(),
             diagnostics=(),
             capabilities=(),
-            scanned_at=datetime.now(timezone.utc),
+            scanned_at=datetime.now(UTC),
             hashes_computed=0,
             hashes_reused=0,
         )

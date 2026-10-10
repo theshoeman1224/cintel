@@ -8,10 +8,10 @@ output file.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from cintel.application.queries import (
     FunctionCandidates,
@@ -20,6 +20,7 @@ from cintel.application.queries import (
     SymbolQueryService,
 )
 from cintel.application.storage_session import storage_session
+from cintel.configuration.models import AppConfig
 from cintel.domain.models import (
     AnalysisCapability,
     CapabilityStatus,
@@ -34,7 +35,6 @@ from cintel.domain.models import (
     TypeSymbol,
     VariableSymbol,
 )
-from cintel.configuration.models import AppConfig
 from cintel.ports.artifacts import ArtifactWriter
 from cintel.ports.storage import AnalysisStorage
 from cintel.utilities.hashing import sha256_text, stable_id
@@ -153,7 +153,7 @@ class ContextService:
                     format="markdown",
                     file_path=str(output_path.resolve()),
                     content_sha256=sha256_text(content),
-                    generated_at=datetime.now(timezone.utc),
+                    generated_at=datetime.now(UTC),
                 )
             )
         return output_path

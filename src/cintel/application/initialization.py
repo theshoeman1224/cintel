@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from cintel.application.storage_session import storage_session
 from cintel.configuration.loader import default_config, render_config
@@ -74,7 +74,7 @@ class InitializationService:
             id=stable_repository_id(root),
             root=str(root),
             name=root.name,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         with storage_session(storage_factory, config.database_path) as storage:
             database_existed = Path(config.database_path).exists()
