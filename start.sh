@@ -104,7 +104,8 @@ section "Test suite"
 
 read -r -p "Run the test suite to verify the install? [y/N]: " run_tests
 if [[ "${run_tests:-}" =~ ^[Yy] ]]; then
-    (cd "$PROJECT_ROOT" && PYTHONPATH=src "$PYTHON" -m unittest discover -s tests)
+    # Redirect stdin so the suite can never block on the caller's terminal.
+    (cd "$PROJECT_ROOT" && PYTHONPATH=src "$PYTHON" -m unittest discover -s tests < /dev/null)
 fi
 
 # ---------------------------------------------------------------------------

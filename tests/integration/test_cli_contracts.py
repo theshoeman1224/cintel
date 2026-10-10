@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cintel.adapters.storage import SQLiteAnalysisStorage
 from cintel.cli.main import main
@@ -277,7 +278,12 @@ class CLIContractTests(unittest.TestCase):
     def test_build_discover_prints_make_warning_in_non_tty(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _, _, stderr = _run("--repository", str(root), "build", "discover")
+            # Force a non-TTY stdin: on a terminal the CLI would prompt and
+            # the suite would block waiting for an answer.
+            with mock.patch("sys.stdin", io.StringIO()):
+                _, _, stderr = _run(
+                    "--repository", str(root), "build", "discover"
+                )
             self.assertIn("Make evaluation command:", stderr)
             self.assertIn("may evaluate", stderr)
 
