@@ -374,7 +374,8 @@ must not become a dependency of deterministic indexing or context selection.
 
 Python 3.11's `tomllib` reads `.code-intelligence/config.toml`. Phase 1 writes a
 small documented schema without adding a TOML dependency. Default exclusions
-include `.git`, `.code-intelligence`, and common build/object directories.
+include `.git`, `.code-intelligence`, `.venv`/`venv`, and common
+build/object directories.
 
 SQLite stores a schema version in `schema_metadata`. Schema v2 adds repository
 file inventory and generated-report metadata. Schema v3 adds build

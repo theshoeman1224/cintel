@@ -4,6 +4,8 @@ from dataclasses import dataclass
 DEFAULT_EXCLUSIONS = (
     ".git",
     ".code-intelligence",
+    ".venv",
+    "venv",
     "build",
     "dist",
     "out",

@@ -15,6 +15,7 @@ from cintel.domain.models import (
     DiagnosticsReportData,
     FileKind,
     FunctionIndexReportData,
+    GlobalUsageIndexEntry,
     GlobalUsageReportData,
     IncludeIndexReportData,
     RepositoryReportData,
@@ -62,7 +63,9 @@ class MarkdownReportRenderer:
             "- Kind `c_source`/`c_header`: relevant C files; "
             "`makefile`/`make_fragment`: Make build inputs recognized by "
             "name; `other`: other recorded build-adjacent inputs.",
-            "- SHA-256: content hash of the file at scan time.",
+            "- SHA-256: content hash of the file at scan time; the "
+            "`Files` table shows a 12-character short form, and "
+            "`repository.json` records the full hash.",
             "- Capability status `available`/`degraded`/`unavailable` "
             "states what cintel can and cannot claim for this repository.",
             "",
@@ -84,16 +87,32 @@ class MarkdownReportRenderer:
             lines.append(
                 f"- {kind.value}: {counts.get(kind, 0)} *(calculated metric)*"
             )
+        lines.extend(("", "## Files by top-level directory", ""))
+        if not scan.files:
+            lines.append(
+                "_No relevant files were available. (unavailable information)_"
+            )
+        else:
+            counts_by_root: dict[str, int] = {}
+            for item in scan.files:
+                parts = item.relative_path.split("/", 1)
+                key = parts[0] if len(parts) > 1 else "(root)"
+                counts_by_root[key] = counts_by_root.get(key, 0) + 1
+            for root in sorted(counts_by_root):
+                lines.append(
+                    f"- `{_escape(root)}`: {counts_by_root[root]} "
+                    "*(calculated metric)*"
+                )
         lines.extend(("", "## Files", ""))
         if not scan.files:
             lines.append("_No relevant files were available. (unavailable information)_")
         else:
-            lines.append("| Path | Kind | Bytes | SHA-256 | Evidence |")
+            lines.append("| Path | Kind | Bytes | SHA-256 (short) | Evidence |")
             lines.append("|---|---:|---:|---|---|")
             for item in scan.files:
                 lines.append(
                     f"| `{_escape(item.relative_path)}` | {item.kind.value} | "
-                    f"{item.size} | `{item.content_sha256}` | extracted fact |"
+                    f"{item.size} | `{item.content_sha256[:12]}` | extracted fact |"
                 )
         lines.extend(("", "## Diagnostics", ""))
         if not scan.diagnostics:
@@ -111,6 +130,9 @@ class MarkdownReportRenderer:
 
     def _build_selection(self, data: BuildSelectionReportData) -> str:
         _require(data, BuildSelectionReportData, "build_selection")
+        selected_by_configuration = {
+            entry.configuration: set(entry.selected) for entry in data.entries
+        }
         lines = [
             "# Build Selection",
             "",
@@ -120,15 +142,23 @@ class MarkdownReportRenderer:
             "and headers that the recorded Make commands actually compile "
             "into that build, and which scanned C files the build leaves "
             "out. It answers \"what does this build contain?\" before any "
-            "source analysis is run.",
+            "source analysis is run, and each section classifies its "
+            "files against the other recorded configurations so "
+            "per-platform differences are visible without manual "
+            "diffing.",
             "",
             "## Value meanings",
             "",
             "- Selected: files referenced as compile inputs by this "
             "configuration; they receive its exact compiler flags.",
+            "- Shared / only-here roll-ins: among the Selected list, "
+            "whether a file is selected by other configurations too. "
+            "With a single configuration, every selection reads as "
+            "only-here.",
             "- Excluded C sources and headers: present in the repository "
-            "but not compiled by this build (per-platform or unused "
-            "sources).",
+            "but not compiled by this build. The roll-in separates "
+            "files another configuration still selects from files no "
+            "recorded build compiles.",
             "- Counts are *calculated metrics* derived from the lists "
             "below.",
             "",
@@ -139,13 +169,36 @@ class MarkdownReportRenderer:
                 "discover` first. (unavailable information)_"
             )
         for entry in data.entries:
+            others = {
+                configuration: selected
+                for configuration, selected in selected_by_configuration.items()
+                if configuration != entry.configuration
+            }
+            other_selected = set().union(*others.values()) if others else set()
+            shared = {
+                path for path in entry.selected if path in other_selected
+            }
+            only_here = set(entry.selected) - shared
+            excluded_but_selected_elsewhere = {
+                path for path in entry.excluded if path in other_selected
+            }
+            excluded_everywhere = set(entry.excluded) - (
+                excluded_but_selected_elsewhere
+            )
             lines.extend(
                 (
                     f"## {entry.configuration}",
                     "",
                     f"- Selected sources: {len(entry.selected)} "
                     "*(calculated metric)*",
+                    f"- Only in this configuration: {len(only_here)}; "
+                    f"shared with other configurations: {len(shared)} "
+                    "*(calculated metric)*",
                     f"- Excluded C sources and headers: {len(entry.excluded)} "
+                    "*(calculated metric)*",
+                    f"- Excluded here, selected elsewhere: "
+                    f"{len(excluded_but_selected_elsewhere)}; compiled by "
+                    f"no recorded configuration: {len(excluded_everywhere)} "
                     "*(calculated metric)*",
                     "",
                 )
@@ -171,7 +224,9 @@ class MarkdownReportRenderer:
             "",
             "One row per persisted compilation unit — a single source file "
             "compiled under a single build configuration with an exact set "
-            "of compiler arguments. Source analysis keys reanalysis on a "
+            "of compiler arguments. It is organized one section per build "
+            "configuration, matching `build_selection.md`, so the units of "
+            "one build read together. Source analysis keys reanalysis on a "
             "unit's fingerprint, so this list defines how source files map "
             "to compiler configurations.",
             "",
@@ -180,8 +235,8 @@ class MarkdownReportRenderer:
             "- Unit: first characters of the stable identifier derived "
             "from the normalized command and build inputs; the same "
             "source may appear under several configurations.",
-            "- Configuration: the named build configuration the unit "
-            "belongs to.",
+            "- Configuration: the named build configuration heading each "
+            "section.",
             "- Source: the `.c` file being compiled; `—` when the compiler "
             "command references a file that is not (or no longer) in the "
             "repository scan.",
@@ -197,20 +252,35 @@ class MarkdownReportRenderer:
                 "(unavailable information)_"
             )
         else:
-            lines.extend(
-                (
-                    "| Unit | Configuration | Source | Compiler | Defines | "
-                    "Include paths |",
-                    "|---|---|---|---|---:|---:|",
-                )
-            )
+            by_configuration: dict[str, list[CompilationUnitEntry]] = {}
             for entry in data.entries:
-                source = entry.source_path or "—"
-                lines.append(
-                    f"| `{entry.unit_id[:16]}…` | {entry.configuration} | "
-                    f"`{_escape(source)}` | {entry.compiler} | "
-                    f"{entry.define_count} | {entry.include_path_count} |"
+                by_configuration.setdefault(entry.configuration, []).append(
+                    entry
                 )
+            for configuration in sorted(by_configuration):
+                units = sorted(
+                    by_configuration[configuration],
+                    key=lambda item: (
+                        item.source_path or "",
+                        item.unit_id,
+                    ),
+                )
+                lines.extend(
+                    (
+                        f"## {configuration} ({len(units)})",
+                        "",
+                        "| Unit | Source | Compiler | Defines | Include paths |",
+                        "|---|---|---|---:|---:|",
+                    )
+                )
+                for entry in units:
+                    source = entry.source_path or "—"
+                    lines.append(
+                        f"| `{entry.unit_id[:16]}…` | `{_escape(source)}` | "
+                        f"{entry.compiler} | "
+                        f"{entry.define_count} | {entry.include_path_count} |"
+                    )
+                lines.append("")
         return "\n".join(lines)
 
     def _function_index(self, data: FunctionIndexReportData) -> str:
@@ -226,12 +296,14 @@ class MarkdownReportRenderer:
             "Functions the conservative parser extracted from analyzed "
             "source files — every declared or defined function name, where "
             "it lives, its linkage, and whether cintel saw a full "
-            "definition. It is the lookup table behind `cintel show "
-            "function` and the context packages.",
+            "definition. It is organized one heading per file so a file's "
+            "functions are read top-down without consulting the "
+            "scanner's file list; a flat, file-ordered view remains in "
+            "`function_index.json`. It is the lookup table behind "
+            "`cintel show function` and the context packages.",
             "",
             "## Value meanings",
             "",
-            "- Function: spelling as written in the source.",
             "- State `definition`: a complete function body was parsed; "
             "`declaration`: only a prototype (signature) was seen.",
             "- Linkage: `internal` (`static`), `external` (default), or "
@@ -246,70 +318,159 @@ class MarkdownReportRenderer:
             lines.append("_No analyzed functions. Run `cintel analyze` first. "
                          "(unavailable information)_")
         else:
-            lines.extend(
-                ("| Function | State | Linkage | Location |", "|---|---|---|---|")
-            )
+            by_file: dict[str, list[FunctionIndexEntry]] = {}
             for entry in data.entries:
-                state = "definition" if entry.is_definition else "declaration"
-                lines.append(
-                    f"| {entry.name} | {state} | {entry.linkage} | "
-                    f"`{_escape(entry.relative_path)}:{entry.line}` |"
+                by_file.setdefault(entry.relative_path, []).append(entry)
+            for relative_path in sorted(by_file):
+                entries = sorted(
+                    by_file[relative_path],
+                    key=lambda item: (item.line, item.name),
                 )
+                lines.extend(
+                    (f"## `{_escape(relative_path)}`", "")
+                )
+                for entry in entries:
+                    state = "definition" if entry.is_definition else "declaration"
+                    lines.append(
+                        f"- {entry.name} — {state}, {entry.linkage}, "
+                        f"`{_escape(entry.relative_path)}:{entry.line}`"
+                    )
+                lines.append("")
         return "\n".join(lines)
 
     def _call_graph(self, data: CallGraphReportData) -> str:
         _require(data, CallGraphReportData, "call_graph")
+        resolved = tuple(
+            edge for edge in data.edges
+            if edge.resolution == "confirmed_direct"
+        )
+        unresolved = tuple(
+            edge for edge in data.edges
+            if edge.resolution != "confirmed_direct"
+        )
         lines = [
             "# Call Graph",
             "",
             f"- Direct-call edges: {len(data.edges)} *(calculated metric)*",
-            f"- Unresolved edges: {data.unresolved_count} *(calculated metric)*",
+            f"- Unresolved edges: {data.unresolved_count} "
+            "*(calculated metric)*",
             "",
             "## What this report means",
             "",
             "Direct calls extracted from analyzed function bodies and "
             "resolved deterministically: same-file `static` definitions "
             "win, then a single repository-wide definition, with callers "
-            "using a build restricted to that build's files. Entry-point "
+            "using a build restricted to that build's files. It is "
+            "organized one section per calling function so a "
+            "function's callees read top-down; unresolved calls are "
+            "listed separately, grouped by callee. Entry-point "
             "reachability and recursion findings derive from these edges.",
             "",
             "## Value meanings",
             "",
-            "- Caller / Callee: function spellings with their defining "
-            "files in parentheses; a callee without a path has no knowable "
-            "definition.",
+            "- Caller heading: the calling function and its defining "
+            "file.",
+            "- Callee: the called function with its definition location "
+            "when the call resolved to one definition.",
             "- Call site: 1-based line of the calling expression.",
             "- Resolution `confirmed_direct`: exactly one definition "
             "within scope addressed the call.",
-            "- Resolution `unresolved`: ambiguous (competing definitions), "
-            "out of the analyzed set, or reached through machinery the "
-            "conservative parser does not interpret (function pointers, "
-            "macro-generated code). Unresolved edges are expected limits, "
-            "not errors.",
+            "- Resolution `unresolved`: ambiguous (competing "
+            "definitions), out of the analyzed set, or reached through "
+            "machinery the conservative parser does not interpret "
+            "(function pointers, macro-generated code). Unresolved "
+            "edges are expected limits, not errors; grouping them by "
+            "callee shows which names need external evidence.",
             "",
         ]
         if not data.edges:
-            lines.append("_No resolved direct calls. Run `cintel analyze` "
-                         "first. (unavailable information)_")
-        else:
             lines.extend(
                 (
-                    "| Caller | Call site | Callee | Resolution |",
-                    "|---|---|---|---|",
+                    "## Calls by caller",
+                    "",
+                    "_No resolved direct calls. Run `cintel analyze` "
+                    "first. (unavailable information)_",
+                    "",
                 )
             )
-            for edge in data.edges:
-                callee = edge.callee
-                if edge.callee_path is not None:
-                    callee = f"{callee} (`{_escape(edge.callee_path)}`)"
-                lines.append(
-                    f"| {edge.caller} (`{_escape(edge.caller_path)}`) | "
-                    f"{edge.call_site_line} | {callee} | {edge.resolution} |"
+        else:
+            by_caller: dict[tuple[str, str], list[CallGraphEdge]] = {}
+            for edge in resolved:
+                by_caller.setdefault(
+                    (edge.caller_path, edge.caller), []
+                ).append(edge)
+            lines.extend(("## Calls by caller", ""))
+            if not resolved:
+                lines.append("_No calls resolved to a definition in the "
+                             "analyzed scope. (unavailable information)_")
+                lines.append("")
+            for caller_path, caller in sorted(by_caller):
+                edges = sorted(
+                    by_caller[(caller_path, caller)],
+                    key=lambda item: (item.call_site_line, item.callee),
                 )
+                heading = caller or "(unresolved caller)"
+                lines.extend((f"### {heading} (`{_escape(caller_path)}`)", ""))
+                lines.append("Callees:")
+                for edge in edges:
+                    callee = f"`{edge.callee}`"
+                    if edge.callee_path is not None:
+                        callee += (
+                            f" (`{_escape(edge.callee_path)}:"
+                            f"{edge.callee_line}`)"
+                        )
+                    lines.append(
+                        f"- {callee} — call site {edge.call_site_line}"
+                    )
+                lines.append("")
+            lines.append("## Unresolved calls")
+            lines.append("")
+            if not unresolved:
+                lines.append("No unresolved direct calls.")
+                lines.append("")
+            else:
+                by_callee: dict[str, list[CallGraphEdge]] = {}
+                for edge in unresolved:
+                    by_callee.setdefault(edge.callee, []).append(edge)
+                for callee in sorted(by_callee):
+                    references = sorted(
+                        by_callee[callee],
+                        key=lambda item: (
+                            item.caller_path,
+                            item.caller,
+                            item.call_site_line,
+                        ),
+                    )
+                    heading = callee or "(unknown callee spelling)"
+                    lines.extend(
+                        (
+                            f"### `{heading}` "
+                            f"({len(references)} call sites)",
+                            "",
+                        )
+                    )
+                    lines.append("Called from:")
+                    for edge in references:
+                        caller = edge.caller or "(unresolved caller)"
+                        caller_text = (
+                            f"`{_escape(caller)}` "
+                            f"(`{_escape(edge.caller_path)}`"
+                            f":{edge.call_site_line})"
+                        )
+                        lines.append(f"- {caller_text}")
+                    lines.append("")
         return "\n".join(lines)
 
     def _include_index(self, data: IncludeIndexReportData) -> str:
         _require(data, IncludeIndexReportData, "include_index")
+        unresolved_entries = tuple(
+            entry for entry in data.entries
+            if entry.resolved_path is None
+        )
+        resolved_entries = tuple(
+            entry for entry in data.entries
+            if entry.resolved_path is not None
+        )
         lines = [
             "# Include Index",
             "",
@@ -322,44 +483,94 @@ class MarkdownReportRenderer:
             "Every `#include` directive the conservative parser found in "
             "analyzed files, and whether it could be mapped to an actual "
             "file. Resolution uses the including file's directory plus the "
-            "compilation unit's `-I` paths, so unresolved rows show which "
-            "headers the analysis could not see.",
+            "compilation unit's `-I` paths. Unresolved directives are "
+            "listed first, grouped by spelling, so the headers the "
+            "analysis cannot see are immediately visible; resolved "
+            "directives follow, grouped by including file.",
             "",
             "## Value meanings",
             "",
-            "- Including file / Included: repository-relative path of the "
-            "file holding the directive, its line, and the spelling "
-            "exactly as written after `#include` (angle brackets and "
-            "quotes included).",
+            "- Included: the spelling exactly as written after "
+            "`#include` (angle brackets and quotes included).",
+            "- Referenced from: the files holding the directive, with "
+            "1-based lines.",
+            "- Unresolved: no matching file in the search paths — "
+            "typical for system headers (`<stdio.h>`) and generated "
+            "headers that do not exist yet. This is an explicitly "
+            "reported limit, not an error.",
             "- Resolved: the found file's repository-relative path.",
-            "- Resolved `unresolved`: no matching file in the search "
-            "paths — typical for system headers (`<stdio.h>`) and "
-            "generated headers that do not exist yet. This is an "
-            "explicitly reported limit, not an error.",
             "",
         ]
         if not data.entries:
             lines.append("_No analyzed includes. Run `cintel analyze` first. "
                          "(unavailable information)_")
         else:
-            lines.extend(
-                ("| Including file | Line | Included | Resolved |",
-                 "|---|---:|---|---|")
-            )
-            for entry in data.entries:
-                resolved = (
-                    f"`{_escape(entry.resolved_path)}`"
-                    if entry.resolved_path is not None
-                    else "unresolved"
-                )
-                lines.append(
-                    f"| `{_escape(entry.including_path)}` | {entry.line} | "
-                    f"`{_escape(entry.included_spelling)}` | {resolved} |"
-                )
+            lines.extend(("## Unresolved includes", ""))
+            if not unresolved_entries:
+                lines.append("No unresolved include directives.")
+                lines.append("")
+            else:
+                by_spelling: dict[str, list[IncludeIndexEntry]] = {}
+                for entry in unresolved_entries:
+                    by_spelling.setdefault(entry.included_spelling, []).append(
+                        entry
+                    )
+                for spelling in sorted(by_spelling):
+                    references = sorted(
+                        by_spelling[spelling],
+                        key=lambda item: (
+                            item.including_path,
+                            item.line,
+                        ),
+                    )
+                    lines.extend(
+                        (
+                            f"### `{_escape(spelling)}` "
+                            f"({len(references)} directives)",
+                            "",
+                        )
+                    )
+                    lines.append("Referenced from:")
+                    for entry in references:
+                        lines.append(
+                            f"- `{_escape(entry.including_path)}:"
+                            f"{entry.line}`"
+                        )
+                    lines.append("")
+            lines.append("## Resolved includes")
+            lines.append("")
+            if not resolved_entries:
+                lines.append("No resolved include directives.")
+                lines.append("")
+            else:
+                by_including: dict[str, list[IncludeIndexEntry]] = {}
+                for entry in resolved_entries:
+                    by_including.setdefault(entry.including_path, []).append(
+                        entry
+                    )
+                for including_path in sorted(by_including):
+                    directives = sorted(
+                        by_including[including_path],
+                        key=lambda item: (item.line, item.included_spelling),
+                    )
+                    lines.extend(
+                        (f"### `{_escape(including_path)}`", "")
+                    )
+                    lines.append("Included:")
+                    for entry in directives:
+                        lines.append(
+                            f"- line {entry.line}: "
+                            f"`{_escape(entry.included_spelling)}` → "
+                            f"`{_escape(entry.resolved_path)}`"
+                        )
+                    lines.append("")
         return "\n".join(lines)
 
     def _symbol_index(self, data: SymbolIndexReportData) -> str:
         _require(data, SymbolIndexReportData, "symbol_index")
+        by_kind: dict[str, list[SymbolIndexEntry]] = {}
+        for entry in data.entries:
+            by_kind.setdefault(entry.kind, []).append(entry)
         lines = [
             "# Symbol Index",
             "",
@@ -369,14 +580,18 @@ class MarkdownReportRenderer:
             "",
             "Named things the conservative parser found while analyzing "
             "source files: functions, file-scope variables, named types, "
-            "and macros. Machine-readable counterpart to `cintel symbols` "
-            "and the store behind `symbol_index.json` fixture validation.",
+            "and macros. It is organized one section per kind with "
+            "symbols alphabetized by name, so a symbol lookup needs no "
+            "scanning; `symbol_index.json` keeps location order for "
+            "machine consumption. This is the lookup table behind "
+            "`cintel symbols` and the store behind `symbol_index.json` "
+            "fixture validation.",
             "",
             "## Value meanings",
             "",
-            "- Kind: `function`, `variable` (file-scope objects), `type` "
-            "(structs, unions, enums, typedefs, opaque types), or `macro` "
-            "(`#define`).",
+            "- Sections: `function`, `variable` (file-scope objects), "
+            "`type` (structs, unions, enums, typedefs, opaque types), "
+            "`macro` (`#define`).",
             "- State: `definition` (the parser saw the full body/type), "
             "`declaration` (extern prototypes, extern/forward types), "
             "`n/a` for symbols without a definition/declaration split.",
@@ -389,98 +604,164 @@ class MarkdownReportRenderer:
             lines.append("_No analyzed symbols. Run `cintel analyze` first. "
                          "(unavailable information)_")
         else:
-            lines.extend(
-                ("| Symbol | Kind | State | Location |", "|---|---|---|---|")
-            )
-            for entry in data.entries:
-                state = (
-                    "n/a"
-                    if entry.is_definition is None
-                    else ("definition" if entry.is_definition else "declaration")
+            for kind in sorted(by_kind):
+                entries = sorted(
+                    by_kind[kind],
+                    key=lambda item: (item.name, item.relative_path, item.line),
                 )
-                lines.append(
-                    f"| {entry.name} | {entry.kind} | {state} | "
-                    f"`{_escape(entry.relative_path)}:{entry.line}` |"
+                lines.extend(
+                    (
+                        f"## {kind.capitalize()}s ({len(entries)})",
+                        "",
+                        "| Symbol | State | Location |",
+                        "|---|---|---|",
+                    )
                 )
+                for entry in entries:
+                    state = (
+                        "n/a"
+                        if entry.is_definition is None
+                        else ("definition" if entry.is_definition else "declaration")
+                    )
+                    lines.append(
+                        f"| {entry.name} | {state} | "
+                        f"`{_escape(entry.relative_path)}:{entry.line}` |"
+                    )
+                lines.append("")
         return "\n".join(lines)
 
     def _global_usage(self, data: GlobalUsageReportData) -> str:
         _require(data, GlobalUsageReportData, "global_usage")
+        by_variable: dict[str, list[GlobalUsageIndexEntry]] = {}
+        for entry in data.entries:
+            by_variable.setdefault(entry.variable, []).append(entry)
+        functions_touching = {
+            (entry.function, entry.function_path) for entry in data.entries
+        }
         lines = [
             "# Global Usage",
             "",
             f"- Recorded usages: {len(data.entries)} *(calculated metric)*",
+            f"- Globals referenced: {len(by_variable)} *(calculated metric)*",
+            f"- Functions touching globals: {len(functions_touching)} "
+            "*(calculated metric)*",
             "",
             "## What this report means",
             "",
             "References to file-scope (global) variables found inside "
             "analyzed function bodies. Read and write access is not "
-            "distinguished yet; this report shows which functions touch "
-            "which globals and where the globals are defined.",
+            "distinguished yet. It is organized one section per variable "
+            "so the functions that touch a global can be read at a "
+            "glance; a variable absent from the list had no usable "
+            "reference inside any analyzed function body.",
             "",
             "## Value meanings",
             "",
-            "- Function / Location: enclosing function and the "
+            "- Variable: the spelling used inside a function body. "
+            "Globals may repeat when several analyzed scopes saw them.",
+            "- Seen at: the file where the parser located the global. "
+            "This is often a declaration in a header rather than the "
+            "defining `static`/file-scope row, because the conservative "
+            "parser records what it saw. `not parsed` when no matching "
+            "symbol was extracted.",
+            "- Reference: the enclosing function and the "
             "repository-relative file containing it.",
-            "- Variable: the referenced global's spelling; the definition "
-            "file path in parentheses when the parser could locate the "
-            "defining row.",
-            "- Usages between functions in different analyzed scopes may "
-            "repeat the same variable.",
+            "- Machine counterpart: `global_usage.json` keeps one flat "
+            "entry per usage; the grouping here is presentation only.",
             "",
         ]
         if not data.entries:
-            lines.append("_No recorded global-variable usages. Run "
-                         "`cintel analyze` first. (unavailable information)_")
-        else:
-            lines.extend(
-                ("| Function | Location | Variable | Definition |",
-                 "|---|---|---|---|")
+            lines.append(
+                "_No recorded global-variable usages. Run "
+                "`cintel analyze` first. (unavailable information)_"
             )
-            for entry in data.entries:
-                variable = entry.variable
-                if entry.variable_path is not None:
-                    variable = f"{variable} (`{_escape(entry.variable_path)}`)"
-                lines.append(
-                    f"| {entry.function} | `{_escape(entry.function_path)}` | "
-                    f"{variable} | |"
+        else:
+            lines.append("## Globals")
+            lines.append("")
+            for variable in sorted(by_variable):
+                references = sorted(
+                    by_variable[variable],
+                    key=lambda item: (item.function_path, item.function),
                 )
+                lines.extend((f"### `{variable}`", ""))
+                seen_at = sorted(
+                    {
+                        entry.variable_path
+                        for entry in references
+                        if entry.variable_path is not None
+                    }
+                )
+                if seen_at:
+                    lines.append(
+                        "- Seen at: " + "; ".join(f"`{_escape(path)}`" for path in seen_at)
+                    )
+                else:
+                    lines.append("- Seen at: not parsed")
+                lines.append("")
+                lines.append("Referenced by:")
+                lines.extend(
+                    f"- `{_escape(item.function)}` "
+                    f"(`{_escape(item.function_path)}`)"
+                    for item in references
+                )
+                lines.append("")
         return "\n".join(lines)
 
     def _diagnostics_index(self, data: DiagnosticsReportData) -> str:
         _require(data, DiagnosticsReportData, "diagnostics_index")
+        by_code: dict[str, list[Diagnostic]] = {}
+        for item in data.entries:
+            by_code.setdefault(item.code, []).append(item)
         lines = [
             "# Diagnostics Index",
             "",
             f"- Diagnostics recorded: {len(data.entries)} "
             "*(calculated metric)*",
+            f"- Codes in this list: {len(by_code)} *(calculated metric)*",
             "",
             "## What this report means",
             "",
             "Every structured diagnostic cintel recorded across workflow "
             "stages — scan, build discovery, recovery, analysis, report "
-            "generation. Codes identify conditions stably so guidance, "
-            "tests, and filters key on them.",
+            "generation. It is organized one section per diagnostic code "
+            "so every occurrence of one condition is read together; "
+            "`diagnostics_index.json` keeps flat records. Codes identify "
+            "conditions stably so guidance, tests, and filters key on "
+            "them.",
             "",
             "## Value meanings",
             "",
-            "- Code (`CI-*-*`): stable condition identifiers — the "
-            "`DiagnosticCode` enumeration in `cintel.domain.diagnostics` is "
-            "the contract.",
-            "- Severity `info`: noteworthy; `warning`: attention needed but "
-            "the workflow continued; `error`: the stage could not complete "
-            "as requested.",
+            "- Section heading (code, `CI-*-*`): stable condition "
+            "identifier — the `DiagnosticCode` enumeration in "
+            "`cintel.domain.diagnostics` is the contract.",
+            "- Severity `info`: noteworthy; `warning`: attention needed "
+            "but the workflow continued; `error`: the stage could not "
+            "complete as requested. Errors are listed first within a "
+            "code section.",
             "- Details: technical context captured with the condition.",
             "",
         ]
         if not data.entries:
             lines.append("No diagnostics recorded.")
-        for item in data.entries:
-            lines.append(
-                f"- **{item.code}** ({item.severity.value}): {item.message}"
-            )
-            if item.technical_details:
-                lines.append(f"  - Details: {item.technical_details}")
+        else:
+            severity_rank = {"error": 0, "warning": 1, "info": 2}
+            for code in sorted(by_code):
+                entries = sorted(
+                    by_code[code],
+                    key=lambda item: (
+                        severity_rank.get(item.severity.value, 3),
+                        item.message,
+                        item.technical_details or "",
+                    ),
+                )
+                lines.extend((f"## {code} ({len(entries)})", ""))
+                for item in entries:
+                    lines.append(
+                        f"- *({item.severity.value})* {item.message}"
+                    )
+                    if item.technical_details:
+                        lines.append(f"  - Details: {item.technical_details}")
+                lines.append("")
         return "\n".join(lines)
 
     def _capability_index(self, data: CapabilityIndexReportData) -> str:
@@ -512,18 +793,27 @@ class MarkdownReportRenderer:
         ]
         if not data.entries:
             lines.append("No capability records recorded.")
-        for item in data.entries:
-            classification = (
-                "unavailable information"
-                if item.status.value == "unavailable"
-                else "extracted fact"
+        else:
+            status_rank = {"unavailable": 0, "degraded": 1, "available": 2}
+            ordered = sorted(
+                data.entries,
+                key=lambda item: (
+                    status_rank.get(item.status.value, 3),
+                    item.name,
+                ),
             )
-            lines.append(
-                f"- **{item.name}** — {item.status.value}: {item.reason} "
-                f"*({classification})*"
-            )
-            for evidence in item.evidence:
-                lines.append(f"  - Evidence: {evidence}")
+            for item in ordered:
+                classification = (
+                    "unavailable information"
+                    if item.status.value == "unavailable"
+                    else "extracted fact"
+                )
+                lines.append(
+                    f"- **{item.name}** — {item.status.value}: {item.reason} "
+                    f"*({classification})*"
+                )
+                for evidence in item.evidence:
+                    lines.append(f"  - Evidence: {evidence}")
         return "\n".join(lines)
 
 
