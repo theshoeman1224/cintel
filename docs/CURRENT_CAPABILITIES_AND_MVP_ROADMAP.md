@@ -63,6 +63,10 @@ Result (re-verified 2026-10-09 after Phase 6 and the first-run findings pass):
 - The analysis summary now tracks unresolved include directives end to end:
   `AnalysisRunSummary.unresolved_includes`, the call-resolution capability
   evidence, the `analyze` text/JSON render, and unit/integration assertions.
+- Every Markdown report family (including the repository inventory) leads
+  with a "What this report means" section and a "Value meanings" glossary
+  covering its columns and domain values; content is static, so duplicate
+  stored state still renders byte-identical reports.
 - New Phase 6 suites cover schema v6 migrations with projection backfill from
   v2/v3/v4/v5 snapshots, the storage query methods, the symbol query service
   (disambiguation, callers/callees, deduplication), the context service

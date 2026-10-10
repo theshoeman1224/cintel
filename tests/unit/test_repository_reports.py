@@ -26,7 +26,9 @@ from cintel.domain.models import (
     FunctionIndexReportData,
     IncludeIndexEntry,
     IncludeIndexReportData,
+    GlobalUsageReportData,
     RepositoryReportData,
+    SymbolIndexReportData,
 )
 from cintel.utilities.hashing import stable_id
 
@@ -272,6 +274,114 @@ class FamilyReportTests(unittest.TestCase):
         payload = json.loads(JSONReportRenderer().render("capability_index", capabilities))
         self.assertIn("**make** — available", markdown)
         self.assertEqual("make", payload["entries"][0]["name"])
+
+    def test_every_markdown_family_explains_its_meaning(self) -> None:
+        rendered = []
+        with tempfile.TemporaryDirectory() as directory:
+            markdown = MarkdownReportRenderer().render(
+                "repository_inventory",
+                _report_data(_scan(Path(directory), "repo")),
+            )
+        rendered.append(("repository_inventory", markdown))
+        for name, data in (
+            ("build_selection", BuildSelectionReportData(entries=())),
+            (
+                "compilation_units",
+                CompilationUnitsReportData(
+                    entries=(
+                        CompilationUnitEntry(
+                            unit_id="unit-1",
+                            configuration="debug",
+                            source_path="src/main.c",
+                            compiler="gcc",
+                            fingerprint="fp-1",
+                            define_count=0,
+                            include_path_count=0,
+                        ),
+                    )
+                ),
+            ),
+            (
+                "function_index",
+                FunctionIndexReportData(
+                    entries=(
+                        FunctionIndexEntry(
+                            name="main",
+                            relative_path="src/main.c",
+                            line=1,
+                            is_definition=True,
+                            linkage="external",
+                        ),
+                    ),
+                    definition_count=1,
+                    declaration_count=0,
+                ),
+            ),
+            (
+                "call_graph",
+                CallGraphReportData(
+                    edges=(
+                        CallGraphEdge(
+                            caller="main",
+                            caller_path="src/main.c",
+                            call_site_line=1,
+                            callee="helper",
+                            callee_path=None,
+                            callee_line=None,
+                            resolution="unresolved",
+                        ),
+                    ),
+                    unresolved_count=1,
+                ),
+            ),
+            (
+                "include_index",
+                IncludeIndexReportData(
+                    entries=(
+                        IncludeIndexEntry(
+                            including_path="src/main.c",
+                            line=1,
+                            included_spelling="stdlib.h",
+                            resolved_path=None,
+                        ),
+                    ),
+                    unresolved_count=1,
+                ),
+            ),
+            ("symbol_index", SymbolIndexReportData(entries=())),
+            ("global_usage", GlobalUsageReportData(entries=())),
+            (
+                "diagnostics_index",
+                DiagnosticsReportData(
+                    entries=(
+                        Diagnostic(
+                            code=DiagnosticCode.REPOSITORY_ROOT_UNAVAILABLE,
+                            severity=DiagnosticSeverity.INFO,
+                            message="informational",
+                        ),
+                    )
+                ),
+            ),
+            (
+                "capability_index",
+                CapabilityIndexReportData(
+                    entries=(
+                        AnalysisCapability(
+                            name="example",
+                            status=CapabilityStatus.AVAILABLE,
+                            reason="reason",
+                        ),
+                    )
+                ),
+            ),
+        ):
+            rendered.append(
+                (name, MarkdownReportRenderer().render(name, data))
+            )
+
+        for name, markdown in rendered:
+            self.assertIn("## What this report means", markdown, name)
+            self.assertIn("## Value meanings", markdown, name)
 
 
 if __name__ == "__main__":

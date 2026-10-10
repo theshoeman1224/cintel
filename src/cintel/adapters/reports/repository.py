@@ -43,6 +43,29 @@ class MarkdownReportRenderer:
             f"- SHA-256 hashes computed: {scan.hashes_computed} *(calculated metric)*",
             f"- SHA-256 hashes reused: {scan.hashes_reused} *(calculated metric)*",
             "",
+            "## What this report means",
+            "",
+            "This inventory is the scanner's snapshot of the repository: "
+            "every relevant C source, header, and Make input found on disk, "
+            "the per-file evidence recorded at scan time, the capabilities "
+            "cintel claims, and a build-state summary from persisted build "
+            "discoveries. `cintel scan` refreshes it incrementally; `cintel "
+            "report` regenerates it from stored state.",
+            "",
+            "## Value meanings",
+            "",
+            "- *calculated metric*: derived from recorded rows, not a "
+            "scanned field.",
+            "- Evidence `extracted fact`: the value existed on disk as "
+            "recorded at scan time; `unavailable information` marks facts "
+            "that cannot be claimed.",
+            "- Kind `c_source`/`c_header`: relevant C files; "
+            "`makefile`/`make_fragment`: Make build inputs recognized by "
+            "name; `other`: other recorded build-adjacent inputs.",
+            "- SHA-256: content hash of the file at scan time.",
+            "- Capability status `available`/`degraded`/`unavailable` "
+            "states what cintel can and cannot claim for this repository.",
+            "",
             "## Capabilities and limitations",
             "",
         ]
@@ -88,7 +111,28 @@ class MarkdownReportRenderer:
 
     def _build_selection(self, data: BuildSelectionReportData) -> str:
         _require(data, BuildSelectionReportData, "build_selection")
-        lines = ["# Build Selection", ""]
+        lines = [
+            "# Build Selection",
+            "",
+            "## What this report means",
+            "",
+            "Per persisted build configuration, the repository C sources "
+            "and headers that the recorded Make commands actually compile "
+            "into that build, and which scanned C files the build leaves "
+            "out. It answers \"what does this build contain?\" before any "
+            "source analysis is run.",
+            "",
+            "## Value meanings",
+            "",
+            "- Selected: files referenced as compile inputs by this "
+            "configuration; they receive its exact compiler flags.",
+            "- Excluded C sources and headers: present in the repository "
+            "but not compiled by this build (per-platform or unused "
+            "sources).",
+            "- Counts are *calculated metrics* derived from the lists "
+            "below.",
+            "",
+        ]
         if not data.entries:
             lines.append(
                 "_No persisted build configurations. Run `cintel build "
@@ -123,6 +167,29 @@ class MarkdownReportRenderer:
             "",
             f"- Units recorded: {len(data.entries)} *(calculated metric)*",
             "",
+            "## What this report means",
+            "",
+            "One row per persisted compilation unit — a single source file "
+            "compiled under a single build configuration with an exact set "
+            "of compiler arguments. Source analysis keys reanalysis on a "
+            "unit's fingerprint, so this list defines how source files map "
+            "to compiler configurations.",
+            "",
+            "## Value meanings",
+            "",
+            "- Unit: first characters of the stable identifier derived "
+            "from the normalized command and build inputs; the same "
+            "source may appear under several configurations.",
+            "- Configuration: the named build configuration the unit "
+            "belongs to.",
+            "- Source: the `.c` file being compiled; `—` when the compiler "
+            "command references a file that is not (or no longer) in the "
+            "repository scan.",
+            "- Compiler: the recognized compiler executable; launcher or "
+            "wrapper tokens are recorded in storage, not shown here.",
+            "- Defines: count of `-D`/`-U` arguments; Include paths: count "
+            "of `-I`/`-isystem` arguments.",
+            "",
         ]
         if not data.entries:
             lines.append(
@@ -154,6 +221,26 @@ class MarkdownReportRenderer:
             f"- Definitions: {data.definition_count} *(calculated metric)*",
             f"- Declarations: {data.declaration_count} *(calculated metric)*",
             "",
+            "## What this report means",
+            "",
+            "Functions the conservative parser extracted from analyzed "
+            "source files — every declared or defined function name, where "
+            "it lives, its linkage, and whether cintel saw a full "
+            "definition. It is the lookup table behind `cintel show "
+            "function` and the context packages.",
+            "",
+            "## Value meanings",
+            "",
+            "- Function: spelling as written in the source.",
+            "- State `definition`: a complete function body was parsed; "
+            "`declaration`: only a prototype (signature) was seen.",
+            "- Linkage: `internal` (`static`), `external` (default), or "
+            "`unknown` when the parser could not decide.",
+            "- Location: repository-relative path and 1-based line of the "
+            "definition or declaration.",
+            "- Same function may appear once per analyzed scope; rows are "
+            "deduplicated by source location.",
+            "",
         ]
         if not data.entries:
             lines.append("_No analyzed functions. Run `cintel analyze` first. "
@@ -177,6 +264,28 @@ class MarkdownReportRenderer:
             "",
             f"- Direct-call edges: {len(data.edges)} *(calculated metric)*",
             f"- Unresolved edges: {data.unresolved_count} *(calculated metric)*",
+            "",
+            "## What this report means",
+            "",
+            "Direct calls extracted from analyzed function bodies and "
+            "resolved deterministically: same-file `static` definitions "
+            "win, then a single repository-wide definition, with callers "
+            "using a build restricted to that build's files. Entry-point "
+            "reachability and recursion findings derive from these edges.",
+            "",
+            "## Value meanings",
+            "",
+            "- Caller / Callee: function spellings with their defining "
+            "files in parentheses; a callee without a path has no knowable "
+            "definition.",
+            "- Call site: 1-based line of the calling expression.",
+            "- Resolution `confirmed_direct`: exactly one definition "
+            "within scope addressed the call.",
+            "- Resolution `unresolved`: ambiguous (competing definitions), "
+            "out of the analyzed set, or reached through machinery the "
+            "conservative parser does not interpret (function pointers, "
+            "macro-generated code). Unresolved edges are expected limits, "
+            "not errors.",
             "",
         ]
         if not data.edges:
@@ -208,6 +317,26 @@ class MarkdownReportRenderer:
             f"- Unresolved includes: {data.unresolved_count} "
             "*(calculated metric)*",
             "",
+            "## What this report means",
+            "",
+            "Every `#include` directive the conservative parser found in "
+            "analyzed files, and whether it could be mapped to an actual "
+            "file. Resolution uses the including file's directory plus the "
+            "compilation unit's `-I` paths, so unresolved rows show which "
+            "headers the analysis could not see.",
+            "",
+            "## Value meanings",
+            "",
+            "- Including file / Included: repository-relative path of the "
+            "file holding the directive, its line, and the spelling "
+            "exactly as written after `#include` (angle brackets and "
+            "quotes included).",
+            "- Resolved: the found file's repository-relative path.",
+            "- Resolved `unresolved`: no matching file in the search "
+            "paths — typical for system headers (`<stdio.h>`) and "
+            "generated headers that do not exist yet. This is an "
+            "explicitly reported limit, not an error.",
+            "",
         ]
         if not data.entries:
             lines.append("_No analyzed includes. Run `cintel analyze` first. "
@@ -236,6 +365,25 @@ class MarkdownReportRenderer:
             "",
             f"- Symbols recorded: {len(data.entries)} *(calculated metric)*",
             "",
+            "## What this report means",
+            "",
+            "Named things the conservative parser found while analyzing "
+            "source files: functions, file-scope variables, named types, "
+            "and macros. Machine-readable counterpart to `cintel symbols` "
+            "and the store behind `symbol_index.json` fixture validation.",
+            "",
+            "## Value meanings",
+            "",
+            "- Kind: `function`, `variable` (file-scope objects), `type` "
+            "(structs, unions, enums, typedefs, opaque types), or `macro` "
+            "(`#define`).",
+            "- State: `definition` (the parser saw the full body/type), "
+            "`declaration` (extern prototypes, extern/forward types), "
+            "`n/a` for symbols without a definition/declaration split.",
+            "- Location: repository-relative path and 1-based line.",
+            "- Rows are deduplicated by source location across analyzed "
+            "scopes; queryable via `cintel symbols [--kind ...]`.",
+            "",
         ]
         if not data.entries:
             lines.append("_No analyzed symbols. Run `cintel analyze` first. "
@@ -262,6 +410,23 @@ class MarkdownReportRenderer:
             "# Global Usage",
             "",
             f"- Recorded usages: {len(data.entries)} *(calculated metric)*",
+            "",
+            "## What this report means",
+            "",
+            "References to file-scope (global) variables found inside "
+            "analyzed function bodies. Read and write access is not "
+            "distinguished yet; this report shows which functions touch "
+            "which globals and where the globals are defined.",
+            "",
+            "## Value meanings",
+            "",
+            "- Function / Location: enclosing function and the "
+            "repository-relative file containing it.",
+            "- Variable: the referenced global's spelling; the definition "
+            "file path in parentheses when the parser could locate the "
+            "defining row.",
+            "- Usages between functions in different analyzed scopes may "
+            "repeat the same variable.",
             "",
         ]
         if not data.entries:
@@ -290,6 +455,23 @@ class MarkdownReportRenderer:
             f"- Diagnostics recorded: {len(data.entries)} "
             "*(calculated metric)*",
             "",
+            "## What this report means",
+            "",
+            "Every structured diagnostic cintel recorded across workflow "
+            "stages — scan, build discovery, recovery, analysis, report "
+            "generation. Codes identify conditions stably so guidance, "
+            "tests, and filters key on them.",
+            "",
+            "## Value meanings",
+            "",
+            "- Code (`CI-*-*`): stable condition identifiers — the "
+            "`DiagnosticCode` enumeration in `cintel.domain.diagnostics` is "
+            "the contract.",
+            "- Severity `info`: noteworthy; `warning`: attention needed but "
+            "the workflow continued; `error`: the stage could not complete "
+            "as requested.",
+            "- Details: technical context captured with the condition.",
+            "",
         ]
         if not data.entries:
             lines.append("No diagnostics recorded.")
@@ -308,6 +490,24 @@ class MarkdownReportRenderer:
             "",
             f"- Capability records: {len(data.entries)} "
             "*(calculated metric)*",
+            "",
+            "## What this report means",
+            "",
+            "What cintel can honestly claim it can do for this repository "
+            "in its current environment: which features are available, "
+            "which are limited, and which could not be reached at all. "
+            "Tool availability, build discovery, and analysis scope all "
+            "appear here.",
+            "",
+            "## Value meanings",
+            "",
+            "- Status `available`: working without restrictions; "
+            "`degraded`: works with explicit limitations; `unavailable`: "
+            "not claimed in this run.",
+            "- Reason: why the status holds; Evidence: concrete values "
+            "supporting it.",
+            "- Classification `extracted fact` vs `unavailable information` "
+            "mirrors the evidence policy used across all reports.",
             "",
         ]
         if not data.entries:

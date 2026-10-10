@@ -207,6 +207,12 @@ repository inventory stays at its conventional locations):
   `reports/capability_index.{md,json}` — every diagnostic and capability
   record with provenance classification.
 
+Every Markdown report opens with a **What this report means** section and
+a **Value meanings** glossary for its columns and domain values
+(`confirmed_direct`/`unresolved`, `internal`/`external` linkage, severity
+levels, and so on), so the artifacts are readable without prior
+knowledge of the schema.
+
 Every written file is recorded in the generated-reports metadata (name,
 format, path, SHA-256). Failures are reported as `CI-GEN-001` diagnostics
 and never abort the remaining families. Apart from the timestamped
