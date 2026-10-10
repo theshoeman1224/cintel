@@ -41,6 +41,10 @@ class ExitCode(IntEnum):
     FAILURE = 2
 
 
+_FUNCTION_NAME_HELP = "Function name to look up"
+_FUNCTION_FILE_HELP = "Repository-relative path that defines the function"
+
+
 def _positive_int(value: str) -> int:
     try:
         number = int(value)
@@ -204,20 +208,20 @@ def build_parser() -> argparse.ArgumentParser:
     show_function = show_commands.add_parser(
         "function", help="Show a function definition, callers, and callees"
     )
-    show_function.add_argument("name", help="Function name to look up")
+    show_function.add_argument("name", help=_FUNCTION_NAME_HELP)
     show_function.add_argument(
         "--file",
-        help="Repository-relative path that defines the function",
+        help=_FUNCTION_FILE_HELP,
     )
     callers = subcommands.add_parser("callers", help="List direct callers of a function")
-    callers.add_argument("name", help="Function name to look up")
+    callers.add_argument("name", help=_FUNCTION_NAME_HELP)
     callers.add_argument(
-        "--file", help="Repository-relative path that defines the function"
+        "--file", help=_FUNCTION_FILE_HELP
     )
     callees = subcommands.add_parser("callees", help="List direct callees of a function")
-    callees.add_argument("name", help="Function name to look up")
+    callees.add_argument("name", help=_FUNCTION_NAME_HELP)
     callees.add_argument(
-        "--file", help="Repository-relative path that defines the function"
+        "--file", help=_FUNCTION_FILE_HELP
     )
     context = subcommands.add_parser(
         "context", help="Build a deterministic, budgeted context package"
@@ -234,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Character budget for the package (default: 8000)",
     )
     context_function.add_argument(
-        "--file", help="Repository-relative path that defines the function"
+        "--file", help=_FUNCTION_FILE_HELP
     )
     subcommands.add_parser(
         "report",
@@ -424,7 +428,7 @@ def _run_show(app, args) -> int:
     return ExitCode.FAILURE
 
 
-def _run_function_query(app, args, query) -> int:
+def _run_function_query(args, query) -> int:
     config = _resolve_config(args.config, args.repository, args.output_directory)
     result = query(config, args.name, file=args.file)
     if isinstance(result, (FunctionCandidates, FunctionNotFound)):
@@ -435,11 +439,11 @@ def _run_function_query(app, args, query) -> int:
 
 
 def _run_callers(app, args) -> int:
-    return _run_function_query(app, args, app.queries.callers)
+    return _run_function_query(args, app.queries.callers)
 
 
 def _run_callees(app, args) -> int:
-    return _run_function_query(app, args, app.queries.callees)
+    return _run_function_query(args, app.queries.callees)
 
 
 def _run_context(app, args) -> int:

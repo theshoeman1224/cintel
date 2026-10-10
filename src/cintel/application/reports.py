@@ -26,6 +26,7 @@ from cintel.domain.errors import ConfigurationError
 from cintel.domain.models import (
     BuildSelectionEntry,
     BuildSelectionReportData,
+    CallEdge,
     CallGraphEdge,
     CallGraphReportData,
     CapabilityIndexReportData,
@@ -39,6 +40,7 @@ from cintel.domain.models import (
     GeneratedReportMetadata,
     GlobalUsageIndexEntry,
     GlobalUsageReportData,
+    IncludeEdge,
     IncludeIndexEntry,
     IncludeIndexReportData,
     MacroSymbol,
@@ -47,6 +49,7 @@ from cintel.domain.models import (
     RepositoryScan,
     SymbolIndexEntry,
     SymbolIndexReportData,
+    SymbolOccurrence,
     TypeSymbol,
     VariableSymbol,
     WorkflowStage,
@@ -374,6 +377,13 @@ def _kind_of(symbol) -> str:
     raise TypeError(f"Unsupported source symbol: {type(symbol).__name__}")
 
 
+def _path_of(
+    occurrence: SymbolOccurrence, files_by_id: dict[str, RepositoryFile]
+) -> str | None:
+    origin = files_by_id.get(occurrence.repository_file_id)
+    return origin.relative_path if origin is not None else None
+
+
 def _global_usage(
     storage: AnalysisStorage,
     repository_id: str,
@@ -397,10 +407,6 @@ def _global_usage(
         )
     }
 
-    def _path_of(occurrence) -> str | None:
-        origin = files_by_id.get(occurrence.repository_file_id)
-        return origin.relative_path if origin is not None else None
-
     selected: dict[tuple[str, str, str, str | None], GlobalUsageIndexEntry] = {}
     for edge in edges:
         function = symbols.get(edge.relationship.function_id)
@@ -409,7 +415,7 @@ def _global_usage(
         if origin is not None:
             function_path = origin.relative_path
         elif function is not None:
-            function_path = _path_of(function) or ""
+            function_path = _path_of(function, files_by_id) or ""
         else:
             function_path = ""
         entry = GlobalUsageIndexEntry(
@@ -420,7 +426,9 @@ def _global_usage(
             ),
             function_path=function_path,
             variable=edge.relationship.variable_spelling,
-            variable_path=_path_of(variable) if variable is not None else None,
+            variable_path=(
+                _path_of(variable, files_by_id) if variable is not None else None
+            ),
         )
         key = (
             entry.function,
@@ -436,6 +444,46 @@ def _global_usage(
         )
     )
     return GlobalUsageReportData(entries=entries)
+
+
+def _call_graph_entry(
+    edge: CallEdge,
+    symbols: dict[str, SymbolOccurrence],
+    files_by_id: dict[str, RepositoryFile],
+) -> CallGraphEdge:
+    caller = symbols.get(edge.call.caller_id)
+    callee = (
+        symbols.get(edge.call.callee_id)
+        if edge.call.callee_id is not None
+        else None
+    )
+    # Call relationships always originate from the analysis that
+    # extracted them, so the calling file is the edge's own file.
+    caller_path = _path_of(caller, files_by_id) if caller is not None else None
+    location = edge.call.evidence[0].location if edge.call.evidence else None
+    if location is not None:
+        call_site_line = location.line
+    elif caller is not None:
+        call_site_line = caller.symbol.location.line
+    else:
+        call_site_line = 0
+    return CallGraphEdge(
+        caller=caller.symbol.name if caller is not None else "",
+        caller_path=caller_path or "",
+        call_site_line=call_site_line,
+        callee=(
+            callee.symbol.name
+            if callee is not None
+            else edge.call.callee_spelling
+        ),
+        callee_path=(
+            _path_of(callee, files_by_id) if callee is not None else None
+        ),
+        callee_line=(
+            callee.symbol.location.line if callee is not None else None
+        ),
+        resolution=edge.call.resolution.value,
+    )
 
 
 def _call_graph(
@@ -455,45 +503,10 @@ def _call_graph(
             repository_id, tuple(symbol_ids)
         )
     }
-
-    def _path_of(occurrence) -> str:
-        origin = files_by_id.get(occurrence.repository_file_id)
-        return origin.relative_path if origin is not None else ""
-
     selected: dict[tuple[str, str, int, str, str | None, int | None], CallGraphEdge] = {}
     unresolved = 0
     for edge in edges:
-        caller = symbols.get(edge.call.caller_id)
-        callee = (
-            symbols.get(edge.call.callee_id)
-            if edge.call.callee_id is not None
-            else None
-        )
-        # Call relationships always originate from the analysis that
-        # extracted them, so the calling file is the edge's own file.
-        caller_path = _path_of(caller) if caller is not None else ""
-        location = edge.call.evidence[0].location if edge.call.evidence else None
-        if location is not None:
-            call_site_line = location.line
-        elif caller is not None:
-            call_site_line = caller.symbol.location.line
-        else:
-            call_site_line = 0
-        entry = CallGraphEdge(
-            caller=caller.symbol.name if caller is not None else "",
-            caller_path=caller_path,
-            call_site_line=call_site_line,
-            callee=(
-                callee.symbol.name
-                if callee is not None
-                else edge.call.callee_spelling
-            ),
-            callee_path=_path_of(callee) if callee is not None else None,
-            callee_line=(
-                callee.symbol.location.line if callee is not None else None
-            ),
-            resolution=edge.call.resolution.value,
-        )
+        entry = _call_graph_entry(edge, symbols, files_by_id)
         if entry.resolution != "confirmed_direct":
             unresolved += 1
         key = (
@@ -519,6 +532,36 @@ def _call_graph(
     return CallGraphReportData(edges=deduped, unresolved_count=unresolved)
 
 
+def _include_entry(
+    edge: IncludeEdge, files_by_id: dict[str, RepositoryFile]
+) -> tuple[tuple[str, int, str], IncludeIndexEntry] | None:
+    relationship = edge.relationship
+    origin = files_by_id.get(edge.repository_file_id)
+    if origin is None:
+        return None
+    location = (
+        relationship.evidence[0].location
+        if relationship.evidence and relationship.evidence[0].location
+        else None
+    )
+    line = location.line if location is not None else 0
+    resolved_path = None
+    if relationship.resolved_file_id is not None:
+        target = files_by_id.get(relationship.resolved_file_id)
+        resolved_path = (
+            target.relative_path
+            if target is not None
+            else relationship.resolved_file_id
+        )
+    key = (origin.relative_path, line, relationship.included_spelling)
+    return key, IncludeIndexEntry(
+        including_path=origin.relative_path,
+        line=line,
+        included_spelling=relationship.included_spelling,
+        resolved_path=resolved_path,
+    )
+
+
 def _include_index(
     storage: AnalysisStorage,
     repository_id: str,
@@ -528,35 +571,15 @@ def _include_index(
     selected: dict[tuple[str, int, str], IncludeIndexEntry] = {}
     unresolved = 0
     for edge in edges:
-        relationship = edge.relationship
-        origin = files_by_id.get(edge.repository_file_id)
-        if origin is None:
+        extracted = _include_entry(edge, files_by_id)
+        if extracted is None:
             continue
-        location = (
-            relationship.evidence[0].location
-            if relationship.evidence and relationship.evidence[0].location
-            else None
-        )
-        line = location.line if location is not None else 0
-        key = (origin.relative_path, line, relationship.included_spelling)
+        key, entry = extracted
         if key in selected:
             continue
-        resolved_path = None
-        if relationship.resolved_file_id is not None:
-            target = files_by_id.get(relationship.resolved_file_id)
-            resolved_path = (
-                target.relative_path
-                if target is not None
-                else relationship.resolved_file_id
-            )
-        else:
+        if entry.resolved_path is None:
             unresolved += 1
-        selected[key] = IncludeIndexEntry(
-            including_path=origin.relative_path,
-            line=line,
-            included_spelling=relationship.included_spelling,
-            resolved_path=resolved_path,
-        )
+        selected[key] = entry
     entries = tuple(
         sorted(
             selected.values(),

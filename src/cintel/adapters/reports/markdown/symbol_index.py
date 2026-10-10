@@ -22,7 +22,18 @@ def render(data: SymbolIndexReportData) -> str:
     by_kind: dict[str, list[SymbolIndexEntry]] = {}
     for entry in data.entries:
         by_kind.setdefault(entry.kind, []).append(entry)
-    lines = [
+    lines = _preamble(data)
+    if not data.entries:
+        lines.append("_No analyzed symbols. Run `cintel analyze` first. "
+                     "(unavailable information)_")
+    else:
+        for kind in sorted(by_kind):
+            lines.extend(_kind_section(kind, by_kind[kind]))
+    return "\n".join(lines)
+
+
+def _preamble(data: SymbolIndexReportData) -> list[str]:
+    return [
         "# Symbol Index",
         "",
         f"- Symbols recorded: {len(data.entries)} *(calculated metric)*",
@@ -51,32 +62,32 @@ def render(data: SymbolIndexReportData) -> str:
         "scopes; queryable via `cintel symbols [--kind ...]`.",
         "",
     ]
-    if not data.entries:
-        lines.append("_No analyzed symbols. Run `cintel analyze` first. "
-                     "(unavailable information)_")
-    else:
-        for kind in sorted(by_kind):
-            entries = sorted(
-                by_kind[kind],
-                key=lambda item: (item.name, item.relative_path, item.line),
-            )
-            lines.extend(
-                (
-                    f"## {kind.capitalize()}s ({len(entries)})",
-                    "",
-                    "| Symbol | State | Location |",
-                    "|---|---|---|",
-                )
-            )
-            for entry in entries:
-                state = (
-                    "n/a"
-                    if entry.is_definition is None
-                    else ("definition" if entry.is_definition else "declaration")
-                )
-                lines.append(
-                    f"| {entry.name} | {state} | "
-                    f"`{escape(entry.relative_path)}:{entry.line}` |"
-                )
-            lines.append("")
-    return "\n".join(lines)
+
+
+def _state(entry: SymbolIndexEntry) -> str:
+    if entry.is_definition is None:
+        return "n/a"
+    if entry.is_definition:
+        return "definition"
+    return "declaration"
+
+
+def _kind_section(kind: str, entries: list[SymbolIndexEntry]) -> list[str]:
+    ordered = sorted(
+        entries,
+        key=lambda item: (item.name, item.relative_path, item.line),
+    )
+    lines = [
+        f"## {kind.capitalize()}s ({len(ordered)})",
+        "",
+        "| Symbol | State | Location |",
+        "|---|---|---|",
+    ]
+    for entry in ordered:
+        state = _state(entry)
+        lines.append(
+            f"| {entry.name} | {state} | "
+            f"`{escape(entry.relative_path)}:{entry.line}` |"
+        )
+    lines.append("")
+    return lines

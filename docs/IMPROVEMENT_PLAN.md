@@ -238,6 +238,58 @@ Landed:
 Verification: docs match behavior; no code changes; suite, ruff, and mypy
 unchanged at 275 tests.
 
+## Phase 6: SonarCloud cleanup
+
+Status: complete (2026-10-10)
+
+Scope: 32 open maintainability smells in the `theshoeman1224_cintel`
+SonarCloud project. 12 test-only fixes (S5778 x10, S9073 x2), 6 small source
+fixes (S1192 x2, S1172 x2, S3358, S9409), and 10 cognitive-complexity
+refactors (S3776). Four smells are accepted as-is: python:S7496
+(`queries.py:221`, `:258`) because the set comprehension deduplicates symbol
+ids before they become SQL placeholders, python:S6353 (`conservative.py:44`)
+because `\w` is Unicode-aware without `re.ASCII`, and python:S5713
+(`fixtures.py:288`) because the redundant `FixtureError` in the except tuple
+documents intent.
+
+Method: characterization tests land before the refactors. They lock the
+current Markdown layout, budget arithmetic, query behavior, and fixture
+branches.
+
+Landed:
+
+- `sonar-project.properties` now targets `theshoeman1224_cintel` with
+  `sonar.organization=theshoeman1224`, so a local scan no longer points at a
+  phantom project.
+- Characterization tests landed before the refactors: full-output golden
+  snapshots for four Markdown families (`tests/expected_reports/`), budget
+  boundary tests for `_apply_budget` including synthetic banner truncation,
+  an exact globals-section test, callee dedup and fallback integration tests,
+  CLI help assertions, and fixture no-handler branch tests.
+- 12 test-only fixes: hoisted non-target invocations out of `assertRaises`
+  (S5778 x10) and split import guard assertions (S9073 x2).
+- 6 small source fixes: help-text constants and unused-parameter removal in
+  `cli/main.py` and `queries.py`, `_state` in `symbol_index.py`, and an
+  `extend` in `context.py` (S1192 x2, S1172 x2, S3358, S9409).
+- 10 cognitive-complexity refactors (S3776): extracted helpers in
+  `application/reports.py`, the four Markdown renderer modules,
+  `application/context.py`, `application/queries.py`, and
+  `scripts/fixtures.py`.
+- Accepted without change: python:S7496 in `queries.py:221` and `:258` (the
+  set comprehension deduplicates symbol ids before they become SQL
+  placeholders), python:S6353 in `conservative.py:44` (`\w` is Unicode-aware
+  without `re.ASCII`), and python:S5713 in `fixtures.py:288` (the redundant
+  `FixtureError` documents which failures are fixture errors).
+
+Verification: 297 tests pass (243 unit, 54 integration), ruff clean, mypy
+clean over 81 files. The complex fixture driver reports passed=13, missing=0,
+conflicts=0. Reports, context packages, and the normalized database dump are
+byte-identical to a pre-change snapshot after normalizing workspace paths,
+timestamps, discovery durations, and the self-referential inventory report
+hashes. The SonarCloud scan that confirms the 28 closed and 4 remaining
+issues runs from the pushed branch; the working tree was left uncommitted for
+review.
+
 ## Definition of done
 
 All six phases landed on 2026-10-10. Suite green throughout, fixture

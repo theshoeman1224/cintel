@@ -145,26 +145,34 @@ class Fixture:
         if self.module is None:
             raise FixtureError(f"fixture {self.name} is data-only and defines no operations")
         handler = getattr(self.module, operation, None)
-        if not callable(handler):
-            if operation == "run":
-                raise FixtureError(f"fixture {self.name} does not define a run operation")
-            if operation == "setup":
-                print("  setup: nothing to do (fixture defines no setup)")
-                return
-            if operation == "verify":
-                if not self.fixture_root.is_dir():
-                    raise FixtureError(f"fixture directory is missing: {self.fixture_root}")
-                print("  verify: fixture directory present (fixture defines no verify)")
-                return
-            if operation == "clean":
-                stray = self.fixture_root / ".code-intelligence"
-                if stray.exists():
-                    shutil.rmtree(stray)
-                    print("  clean: removed stray .code-intelligence")
-                else:
-                    print("  clean: nothing to clean")
-                return
-        handler(context)
+        if callable(handler):
+            handler(context)
+            return
+        self._execute_without_handler(operation)
+
+    def _execute_without_handler(self, operation: str) -> None:
+        if operation == "run":
+            raise FixtureError(f"fixture {self.name} does not define a run operation")
+        if operation == "setup":
+            print("  setup: nothing to do (fixture defines no setup)")
+            return
+        if operation == "verify":
+            self._verify_without_handler()
+            return
+        self._clean_without_handler()
+
+    def _verify_without_handler(self) -> None:
+        if not self.fixture_root.is_dir():
+            raise FixtureError(f"fixture directory is missing: {self.fixture_root}")
+        print("  verify: fixture directory present (fixture defines no verify)")
+
+    def _clean_without_handler(self) -> None:
+        stray = self.fixture_root / ".code-intelligence"
+        if stray.exists():
+            shutil.rmtree(stray)
+            print("  clean: removed stray .code-intelligence")
+        else:
+            print("  clean: nothing to clean")
 
 
 def _fixture_for(directory: Path) -> Fixture | None:

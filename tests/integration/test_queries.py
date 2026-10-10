@@ -88,6 +88,68 @@ class QueryCommandIntegrationTests(unittest.TestCase):
         payload = json.loads(text)
         self.assertEqual("confirmed_direct", payload[0]["resolution"])
 
+    def _replace_main_with_callee_scenario(self) -> None:
+        (self.workspace / "src" / "main.c").write_text(
+            "int helper(void) {\n"
+            "    return 1;\n"
+            "}\n"
+            "\n"
+            "int caller(void) {\n"
+            "    int total = helper() + helper();\n"
+            "    total += helper();\n"
+            "    return total + missing_function();\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        self._run("--repository", str(self.workspace), "scan")
+        self._run("--repository", str(self.workspace), "analyze")
+
+    def test_callees_collapse_repeated_calls_to_the_definition(self) -> None:
+        self._replace_main_with_callee_scenario()
+
+        code, text = self._run(
+            "--repository", str(self.workspace), "--json", "callees", "caller"
+        )
+        self.assertEqual(0, code)
+        payload = json.loads(text)
+
+        helper_sites = [
+            entry for entry in payload if entry["function_name"] == "helper"
+        ]
+        self.assertEqual(1, len(helper_sites))
+        self.assertEqual(1, helper_sites[0]["line"])
+        self.assertEqual("src/main.c", helper_sites[0]["relative_path"])
+        self.assertEqual("confirmed_direct", helper_sites[0]["resolution"])
+
+    def test_callees_unresolved_fallback_uses_caller_file_and_call_site(
+        self,
+    ) -> None:
+        self._replace_main_with_callee_scenario()
+
+        code, text = self._run(
+            "--repository", str(self.workspace), "--json", "callees", "caller"
+        )
+        self.assertEqual(0, code)
+        payload = json.loads(text)
+
+        self.assertEqual(
+            [
+                {
+                    "function_name": "helper",
+                    "line": 1,
+                    "relative_path": "src/main.c",
+                    "resolution": "confirmed_direct",
+                },
+                {
+                    "function_name": "missing_function",
+                    "line": 8,
+                    "relative_path": "src/main.c",
+                    "resolution": "unresolved",
+                },
+            ],
+            payload,
+        )
+
     def test_empty_results_exit_with_no_match(self) -> None:
         code, text = self._run(
             "--repository", str(self.workspace), "callees", "project_value"

@@ -49,8 +49,9 @@ class FixtureDriverDiscoveryTests(unittest.TestCase):
         self.assertIn("repositories/basic", buffer.getvalue())
 
     def test_unknown_fixture_name_is_rejected(self) -> None:
+        fixtures = driver.discover_fixtures()
         with self.assertRaises(driver.FixtureError):
-            driver.select_fixtures(driver.discover_fixtures(), "does-not-exist")
+            driver.select_fixtures(fixtures, "does-not-exist")
 
     def test_operations_skip_data_only_fixtures(self) -> None:
         make = next(
@@ -106,8 +107,9 @@ class FixtureDriverOperationTests(unittest.TestCase):
                 for fixture in driver.discover_fixtures()
                 if fixture.name == "repositories/basic"
             )
+            context = self.make_context(root)
             with self.assertRaises(RuntimeError) as raised:
-                basic.execute("verify", self.make_context(root))
+                basic.execute("verify", context)
             self.assertIn("orphan.c", str(raised.exception))
 
     def test_run_executes_the_basic_lifecycle_without_external_tools(self) -> None:

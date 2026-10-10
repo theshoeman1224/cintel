@@ -36,8 +36,9 @@ class InitializationIntegrationTests(unittest.TestCase):
             config_dir.mkdir()
             (config_dir / "config.toml").write_text("# user settings\n", encoding="utf-8")
 
+            service = InitializationService()
             with self.assertRaises(InitializationError):
-                InitializationService().initialize(root, SQLiteAnalysisStorage)
+                service.initialize(root, SQLiteAnalysisStorage)
             self.assertFalse((config_dir / "cache").exists())
 
     def test_allows_an_explicit_external_output_directory(self) -> None:

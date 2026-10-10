@@ -104,12 +104,14 @@ class GuidanceTests(unittest.TestCase):
         )
 
     def test_renderer_rejects_unsupported_report_names(self) -> None:
+        renderer = MarkdownGuidanceRenderer()
         with self.assertRaises(ValueError):
-            MarkdownGuidanceRenderer().render("something_else", ())
+            renderer.render("something_else", ())
 
     def test_renderer_rejects_non_instruction_items(self) -> None:
+        renderer = MarkdownGuidanceRenderer()
         with self.assertRaises(TypeError):
-            MarkdownGuidanceRenderer().render("required_inputs", (object(),))
+            renderer.render("required_inputs", (object(),))
 
     def test_renderer_handles_empty_instructions(self) -> None:
         rendered = MarkdownGuidanceRenderer().render("required_inputs", ())

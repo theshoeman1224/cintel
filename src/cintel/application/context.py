@@ -33,6 +33,7 @@ from cintel.domain.models import (
     IncludeRelationship,
     MacroSymbol,
     SourceAnalysisResult,
+    SourceSymbol,
     TypeSymbol,
     VariableSymbol,
 )
@@ -44,6 +45,8 @@ from cintel.utilities.paths import stable_repository_id
 DEFAULT_CONTEXT_BUDGET = 8000
 
 _EXCERPT_FALLBACK_LINES = 15
+
+_TRUNCATION_MARKER = "… [truncated]"
 
 _CODE_SECTIONS = frozenset({"Definition", "Preceding comment"})
 
@@ -251,6 +254,27 @@ def _sites_body(sites) -> str:
     )
 
 
+def _global_usage_line(
+    relationship: GlobalUsageRelationship,
+    symbols_by_id: dict[str, SourceSymbol],
+) -> tuple[tuple[str, int], str]:
+    variable = symbols_by_id.get(relationship.variable_id or "")
+    if isinstance(variable, VariableSymbol):
+        spelling = variable.type_spelling or "unknown type"
+        location = variable.location
+    else:
+        spelling = "unknown type"
+        location = None
+    key = (
+        relationship.variable_spelling,
+        location.line if location else 0,
+    )
+    where = (
+        f"{location.path}:{location.line}" if location else "location unknown"
+    )
+    return key, f"{relationship.variable_spelling}: {spelling} ({where})"
+
+
 def _globals_body(analysis: SourceAnalysisResult, function_id: str) -> str:
     symbols_by_id = {symbol.id: symbol for symbol in analysis.symbols}
     lines: list[str] = []
@@ -260,23 +284,11 @@ def _globals_body(analysis: SourceAnalysisResult, function_id: str) -> str:
             continue
         if relationship.function_id != function_id:
             continue
-        variable = symbols_by_id.get(relationship.variable_id or "")
-        location = (
-            variable.location if isinstance(variable, VariableSymbol) else None
-        )
-        key = (relationship.variable_spelling, location.line if location else 0)
+        key, line = _global_usage_line(relationship, symbols_by_id)
         if key in seen:
             continue
         seen.add(key)
-        spelling = (
-            variable.type_spelling or "unknown type"
-            if isinstance(variable, VariableSymbol)
-            else "unknown type"
-        )
-        where = (
-            f"{location.path}:{location.line}" if location else "location unknown"
-        )
-        lines.append(f"{relationship.variable_spelling}: {spelling} ({where})")
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -383,6 +395,36 @@ def _notes(detail: FunctionDetail, analysis: SourceAnalysisResult | None) -> str
     return "\n".join(lines)
 
 
+def _truncate_to_fit(
+    body: str, title: str, budget: int, used: int
+) -> tuple[str, int] | None:
+    remaining = budget - used - len(title) - len(_TRUNCATION_MARKER)
+    if remaining <= 0:
+        return None
+    return body[:remaining] + _TRUNCATION_MARKER, budget
+
+
+def _append_omitted_section(
+    selected: list[tuple[str, str]],
+    omitted: list[str],
+    budget: int,
+    used: int,
+) -> int:
+    if not omitted:
+        return used
+    title = "Omitted sections"
+    body = ", ".join(omitted)
+    cost = len(title) + len(body)
+    if used + cost <= budget:
+        selected.append((title, body))
+        return used + cost
+    truncated = _truncate_to_fit(body, title, budget, used)
+    if truncated is not None:
+        selected.append((title, truncated[0]))
+        return truncated[1]
+    return used
+
+
 def _apply_budget(
     sections: list[tuple[str, str]],
     budget: int,
@@ -407,24 +449,11 @@ def _apply_budget(
         exhausted = True
         omitted.append(title)
         if index == 0:
-            marker = "… [truncated]"
-            remaining = budget - used - len(title) - len(marker)
-            if remaining > 0:
-                selected.append((title, body[:remaining] + marker))
-                used = budget
-    if omitted:
-        title = "Omitted sections"
-        body = ", ".join(omitted)
-        marker = "… [truncated]"
-        cost = len(title) + len(body)
-        if used + cost <= budget:
-            selected.append((title, body))
-            used += cost
-        else:
-            remaining = budget - used - len(title) - len(marker)
-            if remaining > 0:
-                selected.append((title, body[:remaining] + marker))
-                used = budget
+            truncated = _truncate_to_fit(body, title, budget, used)
+            if truncated is not None:
+                selected.append((title, truncated[0]))
+                used = truncated[1]
+    used = _append_omitted_section(selected, omitted, budget, used)
     capabilities = (
         AnalysisCapability(
             name="deterministic_context",
@@ -458,9 +487,7 @@ def render_context_markdown(package: ContextPackage) -> str:
         lines.append(f"## {title}")
         lines.append("")
         if title in _CODE_SECTIONS:
-            lines.append("```c")
-            lines.append(body)
-            lines.append("```")
+            lines.extend(("```c", body, "```"))
         else:
             lines.append(body)
         lines.append("")

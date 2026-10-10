@@ -152,7 +152,7 @@ class SymbolQueryService:
                     storage, repository_id, definition, definition_ids, files_by_id
                 ),
                 callees=self._callees(
-                    storage, repository_id, definition, definition_ids, files_by_id
+                    storage, repository_id, definition_ids, files_by_id
                 ),
             )
 
@@ -197,7 +197,7 @@ class SymbolQueryService:
                 return _candidates(name, definitions, files_by_id)
             definition, definition_ids = selected
             return self._callees(
-                storage, repository_id, definition, definition_ids, files_by_id
+                storage, repository_id, definition_ids, files_by_id
             )
 
     def _callers(
@@ -247,7 +247,6 @@ class SymbolQueryService:
         self,
         storage: AnalysisStorage,
         repository_id: str,
-        definition: SymbolEntry,
         definition_ids: tuple[str, ...],
         files_by_id: dict[str, RepositoryFile],
     ) -> tuple[CallSite, ...]:
@@ -264,29 +263,7 @@ class SymbolQueryService:
         sites: list[CallSite] = []
         seen: set[tuple[str, str, int, str]] = set()
         for edge in edges:
-            callee = (
-                callees.get(edge.call.callee_id)
-                if edge.call.callee_id is not None
-                else None
-            )
-            if callee is not None and isinstance(callee.symbol, FunctionSymbol):
-                site = CallSite(
-                    function_name=callee.symbol.name,
-                    relative_path=files_by_id[
-                        callee.repository_file_id
-                    ].relative_path,
-                    line=callee.symbol.location.line,
-                    resolution=edge.call.resolution.value,
-                )
-            else:
-                origin = files_by_id.get(edge.repository_file_id)
-                location = edge.call.evidence[0].location if edge.call.evidence else None
-                site = CallSite(
-                    function_name=edge.call.callee_spelling,
-                    relative_path=origin.relative_path if origin else "",
-                    line=location.line if location else 0,
-                    resolution=edge.call.resolution.value,
-                )
+            site = _callee_site(edge, callees, files_by_id)
             key = (
                 site.function_name,
                 site.relative_path,
@@ -389,6 +366,35 @@ def _files_by_id(
     return {
         item.id: item for item in storage.list_repository_files(repository_id)
     }
+
+
+def _callee_site(
+    edge: CallEdge,
+    callees: dict[str, SymbolOccurrence],
+    files_by_id: dict[str, RepositoryFile],
+) -> CallSite:
+    callee = (
+        callees.get(edge.call.callee_id)
+        if edge.call.callee_id is not None
+        else None
+    )
+    if callee is not None and isinstance(callee.symbol, FunctionSymbol):
+        return CallSite(
+            function_name=callee.symbol.name,
+            relative_path=files_by_id[
+                callee.repository_file_id
+            ].relative_path,
+            line=callee.symbol.location.line,
+            resolution=edge.call.resolution.value,
+        )
+    origin = files_by_id.get(edge.repository_file_id)
+    location = edge.call.evidence[0].location if edge.call.evidence else None
+    return CallSite(
+        function_name=edge.call.callee_spelling,
+        relative_path=origin.relative_path if origin else "",
+        line=location.line if location else 0,
+        resolution=edge.call.resolution.value,
+    )
 
 
 def _call_site(

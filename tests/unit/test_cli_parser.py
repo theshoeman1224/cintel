@@ -31,24 +31,26 @@ class CLIParserTests(unittest.TestCase):
         self.assertIsNone(args.repository_path)
 
     def test_budget_rejects_zero_with_actionable_message(self) -> None:
+        parser = build_parser()
         stderr = io.StringIO()
         with (
             self.assertRaises(SystemExit) as caught,
             contextlib.redirect_stderr(stderr),
         ):
-            build_parser().parse_args(
+            parser.parse_args(
                 ["context", "function", "foo", "--budget", "0"]
             )
         self.assertEqual(2, caught.exception.code)
         self.assertIn("must be a positive integer", stderr.getvalue())
 
     def test_budget_rejects_non_numeric_values(self) -> None:
+        parser = build_parser()
         stderr = io.StringIO()
         with (
             self.assertRaises(SystemExit) as caught,
             contextlib.redirect_stderr(stderr),
         ):
-            build_parser().parse_args(
+            parser.parse_args(
                 ["context", "function", "foo", "--budget", "abc"]
             )
         self.assertEqual(2, caught.exception.code)
@@ -57,6 +59,36 @@ class CLIParserTests(unittest.TestCase):
     def test_build_config_default_is_default(self) -> None:
         args = build_parser().parse_args(["build", "units"])
         self.assertEqual("default", args.build_config)
+
+    def _help_for(self, *arguments: str) -> str:
+        parser = build_parser()
+        stdout = io.StringIO()
+        with (
+            self.assertRaises(SystemExit),
+            contextlib.redirect_stdout(stdout),
+        ):
+            parser.parse_args([*arguments, "--help"])
+        return stdout.getvalue()
+
+    def test_function_commands_document_name_and_file_help(self) -> None:
+        for command in (
+            ("show", "function"),
+            ("callers",),
+            ("callees",),
+        ):
+            with self.subTest(command=command):
+                text = self._help_for(*command)
+                self.assertIn("Function name to look up", text)
+                self.assertIn(
+                    "Repository-relative path that defines the function", text
+                )
+
+    def test_context_function_help_documents_name_and_file(self) -> None:
+        text = self._help_for("context", "function")
+        self.assertIn("Function name to package", text)
+        self.assertIn(
+            "Repository-relative path that defines the function", text
+        )
 
 
 if __name__ == "__main__":

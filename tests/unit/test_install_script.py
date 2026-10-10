@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "install.py"
 SCRIPT_SPEC = spec_from_file_location("cintel_install_script", SCRIPT_PATH)
-assert SCRIPT_SPEC is not None and SCRIPT_SPEC.loader is not None
+assert SCRIPT_SPEC is not None
+assert SCRIPT_SPEC.loader is not None
 INSTALL_SCRIPT = module_from_spec(SCRIPT_SPEC)
 SCRIPT_SPEC.loader.exec_module(INSTALL_SCRIPT)
 

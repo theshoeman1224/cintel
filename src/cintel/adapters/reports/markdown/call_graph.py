@@ -27,7 +27,25 @@ def render(data: CallGraphReportData) -> str:
         edge for edge in data.edges
         if edge.resolution != "confirmed_direct"
     )
-    lines = [
+    lines = _preamble(data)
+    if not data.edges:
+        lines.extend(
+            (
+                "## Calls by caller",
+                "",
+                "_No resolved direct calls. Run `cintel analyze` "
+                "first. (unavailable information)_",
+                "",
+            )
+        )
+    else:
+        lines.extend(_calls_by_caller(resolved))
+        lines.extend(_unresolved_calls(unresolved))
+    return "\n".join(lines)
+
+
+def _preamble(data: CallGraphReportData) -> list[str]:
+    return [
         "# Call Graph",
         "",
         f"- Direct-call edges: {len(data.edges)} *(calculated metric)*",
@@ -62,80 +80,76 @@ def render(data: CallGraphReportData) -> str:
         "callee shows which names need external evidence.",
         "",
     ]
-    if not data.edges:
+
+
+def _calls_by_caller(resolved: tuple[CallGraphEdge, ...]) -> list[str]:
+    lines: list[str] = ["## Calls by caller", ""]
+    if not resolved:
+        lines.append("_No calls resolved to a definition in the "
+                     "analyzed scope. (unavailable information)_")
+        lines.append("")
+        return lines
+    by_caller: dict[tuple[str, str], list[CallGraphEdge]] = {}
+    for edge in resolved:
+        by_caller.setdefault(
+            (edge.caller_path, edge.caller), []
+        ).append(edge)
+    for caller_path, caller in sorted(by_caller):
+        edges = sorted(
+            by_caller[(caller_path, caller)],
+            key=lambda item: (item.call_site_line, item.callee),
+        )
+        heading = caller or "(unresolved caller)"
+        lines.extend((f"### {heading} (`{escape(caller_path)}`)", ""))
+        lines.append("Callees:")
+        for edge in edges:
+            callee = f"`{edge.callee}`"
+            if edge.callee_path is not None:
+                callee += (
+                    f" (`{escape(edge.callee_path)}:"
+                    f"{edge.callee_line}`)"
+                )
+            lines.append(
+                f"- {callee} — call site {edge.call_site_line}"
+            )
+        lines.append("")
+    return lines
+
+
+def _unresolved_calls(unresolved: tuple[CallGraphEdge, ...]) -> list[str]:
+    lines: list[str] = ["## Unresolved calls", ""]
+    if not unresolved:
+        lines.append("No unresolved direct calls.")
+        lines.append("")
+        return lines
+    by_callee: dict[str, list[CallGraphEdge]] = {}
+    for edge in unresolved:
+        by_callee.setdefault(edge.callee, []).append(edge)
+    for callee in sorted(by_callee):
+        references = sorted(
+            by_callee[callee],
+            key=lambda item: (
+                item.caller_path,
+                item.caller,
+                item.call_site_line,
+            ),
+        )
+        heading = callee or "(unknown callee spelling)"
         lines.extend(
             (
-                "## Calls by caller",
-                "",
-                "_No resolved direct calls. Run `cintel analyze` "
-                "first. (unavailable information)_",
+                f"### `{heading}` "
+                f"({len(references)} call sites)",
                 "",
             )
         )
-    else:
-        by_caller: dict[tuple[str, str], list[CallGraphEdge]] = {}
-        for edge in resolved:
-            by_caller.setdefault(
-                (edge.caller_path, edge.caller), []
-            ).append(edge)
-        lines.extend(("## Calls by caller", ""))
-        if not resolved:
-            lines.append("_No calls resolved to a definition in the "
-                         "analyzed scope. (unavailable information)_")
-            lines.append("")
-        for caller_path, caller in sorted(by_caller):
-            edges = sorted(
-                by_caller[(caller_path, caller)],
-                key=lambda item: (item.call_site_line, item.callee),
+        lines.append("Called from:")
+        for edge in references:
+            caller = edge.caller or "(unresolved caller)"
+            caller_text = (
+                f"`{escape(caller)}` "
+                f"(`{escape(edge.caller_path)}`"
+                f":{edge.call_site_line})"
             )
-            heading = caller or "(unresolved caller)"
-            lines.extend((f"### {heading} (`{escape(caller_path)}`)", ""))
-            lines.append("Callees:")
-            for edge in edges:
-                callee = f"`{edge.callee}`"
-                if edge.callee_path is not None:
-                    callee += (
-                        f" (`{escape(edge.callee_path)}:"
-                        f"{edge.callee_line}`)"
-                    )
-                lines.append(
-                    f"- {callee} — call site {edge.call_site_line}"
-                )
-            lines.append("")
-        lines.append("## Unresolved calls")
+            lines.append(f"- {caller_text}")
         lines.append("")
-        if not unresolved:
-            lines.append("No unresolved direct calls.")
-            lines.append("")
-        else:
-            by_callee: dict[str, list[CallGraphEdge]] = {}
-            for edge in unresolved:
-                by_callee.setdefault(edge.callee, []).append(edge)
-            for callee in sorted(by_callee):
-                references = sorted(
-                    by_callee[callee],
-                    key=lambda item: (
-                        item.caller_path,
-                        item.caller,
-                        item.call_site_line,
-                    ),
-                )
-                heading = callee or "(unknown callee spelling)"
-                lines.extend(
-                    (
-                        f"### `{heading}` "
-                        f"({len(references)} call sites)",
-                        "",
-                    )
-                )
-                lines.append("Called from:")
-                for edge in references:
-                    caller = edge.caller or "(unresolved caller)"
-                    caller_text = (
-                        f"`{escape(caller)}` "
-                        f"(`{escape(edge.caller_path)}`"
-                        f":{edge.call_site_line})"
-                    )
-                    lines.append(f"- {caller_text}")
-                lines.append("")
-    return "\n".join(lines)
+    return lines

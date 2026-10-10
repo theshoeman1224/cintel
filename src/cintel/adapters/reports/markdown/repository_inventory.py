@@ -17,6 +17,7 @@ from cintel.adapters.reports.markdown.shared import (
 from cintel.domain.models import (
     FileKind,
     RepositoryReportData,
+    RepositoryScan,
 )
 
 
@@ -24,7 +25,18 @@ def render(data: RepositoryReportData) -> str:
     require(data, RepositoryReportData, "repository_inventory")
     scan = data.scan
     counts = Counter(item.kind for item in scan.files)
-    lines = [
+    lines = _preamble(scan)
+    lines.extend(_capability_lines(scan))
+    lines.extend(_inventory_summary(counts))
+    lines.extend(_files_by_directory(scan))
+    lines.extend(_files_table(scan))
+    lines.extend(_diagnostics(scan))
+    lines.extend(("", build_awareness_markdown(data)))
+    return "\n".join(lines)
+
+
+def _preamble(scan: RepositoryScan) -> list[str]:
+    return [
         "# Repository Inventory",
         "",
         f"- Repository: `{scan.repository.root}`",
@@ -61,6 +73,10 @@ def render(data: RepositoryReportData) -> str:
         "## Capabilities and limitations",
         "",
     ]
+
+
+def _capability_lines(scan: RepositoryScan) -> list[str]:
+    lines: list[str] = []
     for capability in scan.capabilities:
         classification = (
             "unavailable information"
@@ -71,39 +87,55 @@ def render(data: RepositoryReportData) -> str:
             f"- **{capability.name}** — {capability.status.value}: "
             f"{capability.reason} *({classification})*"
         )
-    lines.extend(("", "## Inventory summary", ""))
+    return lines
+
+
+def _inventory_summary(counts: Counter) -> list[str]:
+    lines = ["", "## Inventory summary", ""]
     for kind in FileKind:
         lines.append(
             f"- {kind.value}: {counts.get(kind, 0)} *(calculated metric)*"
         )
-    lines.extend(("", "## Files by top-level directory", ""))
+    return lines
+
+
+def _files_by_directory(scan: RepositoryScan) -> list[str]:
+    lines = ["", "## Files by top-level directory", ""]
     if not scan.files:
         lines.append(
             "_No relevant files were available. (unavailable information)_"
         )
-    else:
-        counts_by_root: dict[str, int] = {}
-        for item in scan.files:
-            parts = item.relative_path.split("/", 1)
-            key = parts[0] if len(parts) > 1 else "(root)"
-            counts_by_root[key] = counts_by_root.get(key, 0) + 1
-        for root in sorted(counts_by_root):
-            lines.append(
-                f"- `{escape(root)}`: {counts_by_root[root]} "
-                "*(calculated metric)*"
-            )
-    lines.extend(("", "## Files", ""))
+        return lines
+    counts_by_root: dict[str, int] = {}
+    for item in scan.files:
+        parts = item.relative_path.split("/", 1)
+        key = parts[0] if len(parts) > 1 else "(root)"
+        counts_by_root[key] = counts_by_root.get(key, 0) + 1
+    for root in sorted(counts_by_root):
+        lines.append(
+            f"- `{escape(root)}`: {counts_by_root[root]} "
+            "*(calculated metric)*"
+        )
+    return lines
+
+
+def _files_table(scan: RepositoryScan) -> list[str]:
+    lines = ["", "## Files", ""]
     if not scan.files:
         lines.append("_No relevant files were available. (unavailable information)_")
-    else:
-        lines.append("| Path | Kind | Bytes | SHA-256 (short) | Evidence |")
-        lines.append("|---|---:|---:|---|---|")
-        for item in scan.files:
-            lines.append(
-                f"| `{escape(item.relative_path)}` | {item.kind.value} | "
-                f"{item.size} | `{item.content_sha256[:12]}` | extracted fact |"
-            )
-    lines.extend(("", "## Diagnostics", ""))
+        return lines
+    lines.append("| Path | Kind | Bytes | SHA-256 (short) | Evidence |")
+    lines.append("|---|---:|---:|---|---|")
+    for item in scan.files:
+        lines.append(
+            f"| `{escape(item.relative_path)}` | {item.kind.value} | "
+            f"{item.size} | `{item.content_sha256[:12]}` | extracted fact |"
+        )
+    return lines
+
+
+def _diagnostics(scan: RepositoryScan) -> list[str]:
+    lines = ["", "## Diagnostics", ""]
     if not scan.diagnostics:
         lines.append("No scan diagnostics.")
     for diagnostic in scan.diagnostics:
@@ -115,5 +147,4 @@ def render(data: RepositoryReportData) -> str:
             lines.append(f"  - Details: {diagnostic.technical_details}")
         for action in diagnostic.suggested_actions:
             lines.append(f"  - Suggested action: {action}")
-    lines.extend(("", build_awareness_markdown(data)))
-    return "\n".join(lines)
+    return lines

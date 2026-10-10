@@ -113,12 +113,14 @@ class RepositoryReportTests(unittest.TestCase):
         self.assertEqual("extracted_fact", payload["build"]["classification"])
 
     def test_unknown_report_names_are_rejected(self) -> None:
+        markdown = MarkdownReportRenderer()
+        json_renderer = JSONReportRenderer()
         with self.assertRaises(ValueError):
-            MarkdownReportRenderer().render("unknown", {})
+            markdown.render("unknown", {})
         with self.assertRaises(ValueError):
-            JSONReportRenderer().render("unknown", {})
+            json_renderer.render("unknown", {})
         with self.assertRaises(TypeError):
-            MarkdownReportRenderer().render("repository_inventory", {})
+            markdown.render("repository_inventory", {})
 
 
 class FamilyReportTests(unittest.TestCase):
