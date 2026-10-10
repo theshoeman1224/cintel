@@ -195,7 +195,7 @@ class SymbolQueryService:
             selected = _select_definition(definitions, files_by_id)
             if selected is None:
                 return _candidates(name, definitions, files_by_id)
-            definition, definition_ids = selected
+            _, definition_ids = selected
             return self._callees(
                 storage, repository_id, definition_ids, files_by_id
             )
