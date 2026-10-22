@@ -609,32 +609,41 @@ def _missing_configuration_diagnostics(
     Without this, a plain ``analyze`` after ``build discover --build-config
     NAME`` silently falls back to file-scoped analysis.
     """
-    if build_configuration_name is None or inputs.units:
-        return ()
-    others = sorted(
-        {
-            item.name
-            for item in storage.list_build_configurations(repository_id)
-            if item.name != build_configuration_name
-        }
+    diagnostics: list[Diagnostic] = []
+    others = (
+        sorted(
+            {
+                item.name
+                for item in storage.list_build_configurations(repository_id)
+                if item.name != build_configuration_name
+            }
+        )
+        if build_configuration_name is not None and not inputs.units
+        else []
     )
-    if not others:
-        return ()
-    return (
-        Diagnostic(
-            code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
-            severity=DiagnosticSeverity.INFO,
-            message=(
-                f"Build configuration `{build_configuration_name}` has no "
-                "compilation units, so analysis is file-scoped. Discovered "
-                f"configurations: {', '.join(others)}."
-            ),
-            missing_capability="build_aware_analysis",
-            recoverability=Recoverability.USER_ACTION,
-            suggested_actions=(
-                f"Rerun with --build-config {others[0]} before the subcommand "
-                "for build-aware analysis.",
-            ),
+    if others:
+        diagnostics.append(
+            _missing_configuration_diagnostic(build_configuration_name, others)
+        )
+    return tuple(diagnostics)
+
+
+def _missing_configuration_diagnostic(
+    build_configuration_name: str | None, others: list[str]
+) -> Diagnostic:
+    return Diagnostic(
+        code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
+        severity=DiagnosticSeverity.INFO,
+        message=(
+            f"Build configuration `{build_configuration_name}` has no "
+            "compilation units, so analysis is file-scoped. Discovered "
+            f"configurations: {', '.join(others)}."
+        ),
+        missing_capability="build_aware_analysis",
+        recoverability=Recoverability.USER_ACTION,
+        suggested_actions=(
+            f"Rerun with --build-config {others[0]} before the subcommand "
+            "for build-aware analysis.",
         ),
     )
 

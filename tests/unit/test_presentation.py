@@ -408,6 +408,42 @@ class PresentationTests(unittest.TestCase):
         self.assertIn("Includes: 11 resolved, 1 unresolved", text)
         self.assertIn("unreachable definitions: 3", text)
 
+    def test_repeated_diagnostics_are_grouped_with_their_paths(self) -> None:
+        repeated = tuple(
+            Diagnostic(
+                code="CI-BUILD-005",
+                severity=DiagnosticSeverity.WARNING,
+                message="A compiler command references a missing forced include.",
+                suggested_actions=("Generate the forced include.",),
+                related_paths=(f"generated/header_{index}.h",),
+            )
+            for index in range(7)
+        )
+        single = Diagnostic(
+            code="CI-ANLZ-001",
+            severity=DiagnosticSeverity.INFO,
+            message="Once.",
+            related_paths=("src/main.c",),
+        )
+        text = render_analysis(
+            replace(_analysis_summary(), diagnostics=(*repeated, single, repeated[0]))
+        )
+        self.assertEqual(1, text.count("[CI-BUILD-005]"))
+        self.assertIn(
+            "[CI-BUILD-005] warning: A compiler command references a missing "
+            "forced include. (8 occurrences)",
+            text,
+        )
+        self.assertEqual(1, text.count("Action: Generate the forced include."))
+        self.assertIn(
+            "  Paths: generated/header_0.h, generated/header_1.h, "
+            "generated/header_2.h, generated/header_3.h, "
+            "generated/header_4.h (+2 more)",
+            text,
+        )
+        self.assertIn("[CI-ANLZ-001] info: Once.\n  Paths: src/main.c", text)
+        self.assertLess(text.index("[CI-BUILD-005]"), text.index("[CI-ANLZ-001]"))
+
     def test_analysis_json_round_trips_key_fields(self) -> None:
         payload = json.loads(render_analysis(_analysis_summary(), as_json=True))
         self.assertEqual("linux", payload["build_configuration_name"])

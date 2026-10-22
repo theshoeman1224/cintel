@@ -6,6 +6,7 @@ import argparse
 import json
 import shlex
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from enum import IntEnum
@@ -90,7 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Print extra progress detail to standard error",
+        help=(
+            "Print the configuration source and the command's run time to "
+            "standard error"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="Render machine-readable output")
     parser.add_argument(
@@ -256,6 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if handler is None:
         parser.error(f"Unsupported command: {args.command}")
         return int(ExitCode.FAILURE)
+    started = time.perf_counter()
     try:
         return int(handler(app, args))
     except CintelError as exc:
@@ -270,6 +275,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(f"cintel: {exc}", file=sys.stderr)
         return int(ExitCode.FAILURE)
+    finally:
+        if args.verbose:
+            elapsed = time.perf_counter() - started
+            print(
+                f"cintel: {_command_label(args)} finished in {elapsed:.2f}s",
+                file=sys.stderr,
+            )
+
+
+def _command_label(args) -> str:
+    subcommand = next(
+        (
+            getattr(args, name)
+            for name in ("build_command", "show_command", "context_command")
+            if getattr(args, name, None)
+        ),
+        None,
+    )
+    return f"{args.command} {subcommand}" if subcommand else args.command
 
 
 def _run_init(app, args) -> int:
@@ -284,21 +308,21 @@ def _run_init(app, args) -> int:
 
 
 def _run_doctor(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
     report = app.doctor.inspect(config)
     print(render_doctor(report, args.json))
     return _diagnostics_exit_code(report.diagnostics)
 
 
 def _run_scan(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
     result = app.scanning.scan(config)
     print(render_scan(result, args.json))
     return _diagnostics_exit_code(result.scan.diagnostics)
 
 
 def _run_recovery(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
     configuration = _create_build_configuration(app, config, args)
     if args.command == "setup":
         if args.input_file is not None:
@@ -331,7 +355,7 @@ def _run_recovery(app, args) -> int:
 
 
 def _run_analyze(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
     summary = app.analysis.analyze(
         config,
         build_configuration_name=args.build_config,
@@ -342,9 +366,13 @@ def _run_analyze(app, args) -> int:
 
 
 def _run_build(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
     if args.build_command == "discover":
         return _run_build_discover(app, config, args)
+    if args.build_command in {"units", "show"} and not _workspace_exists(
+        config, args, "cintel build discover"
+    ):
+        return ExitCode.NO_MATCH
     if args.build_command == "units":
         units = app.build_discovery.list_units(config, args.build_config)
         return _print_units(app, config, args, units)
@@ -412,14 +440,18 @@ def _run_build_discover(app, config, args) -> int:
 
 
 def _run_symbols(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
+    if not _workspace_exists(config, args, "cintel analyze"):
+        return ExitCode.NO_MATCH
     result = app.queries.symbols(config, kind=args.kind, name=args.name)
     print(render_symbols(result, args.json))
     return ExitCode.SUCCESS if result.entries else ExitCode.NO_MATCH
 
 
 def _run_show(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
+    if not _workspace_exists(config, args, "cintel analyze"):
+        return ExitCode.NO_MATCH
     if args.show_command == "function":
         result = app.queries.function(config, args.name, file=args.file)
         print(render_function_detail(result, args.json))
@@ -430,7 +462,9 @@ def _run_show(app, args) -> int:
 
 
 def _run_function_query(args, query) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
+    if not _workspace_exists(config, args, "cintel analyze"):
+        return ExitCode.NO_MATCH
     result = query(config, args.name, file=args.file)
     if isinstance(result, (FunctionCandidates, FunctionNotFound)):
         print(render_function_detail(result, args.json))
@@ -448,7 +482,9 @@ def _run_callees(app, args) -> int:
 
 
 def _run_context(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
+    if not _workspace_exists(config, args, "cintel analyze"):
+        return ExitCode.NO_MATCH
     if args.context_command == "function":
         result = app.context.context_function(
             config, args.name, file=args.file, budget=args.budget
@@ -461,7 +497,7 @@ def _run_context(app, args) -> int:
 
 
 def _run_report(app, args) -> int:
-    config = _resolve_config(args.config, args.repository, args.output_directory)
+    config = _config(args)
     result = app.reports.generate_all(config)
     print(render_report_run(result, args.json))
     return _diagnostics_exit_code(result.diagnostics)
@@ -490,26 +526,71 @@ def _diagnostics_exit_code(diagnostics) -> ExitCode:
     return ExitCode.FAILURE if has_error else ExitCode.SUCCESS
 
 
+def _config(args):
+    """Resolve the configuration, reporting its source under --verbose."""
+    config, source = _resolve_config(
+        args.config, args.repository, args.output_directory
+    )
+    if args.verbose:
+        print(f"cintel: configuration: {source}", file=sys.stderr)
+    if config.ai_enabled:
+        print(
+            "cintel: warning: [ai] enabled = true has no effect; AI "
+            "integration is not implemented and nothing is sent.",
+            file=sys.stderr,
+        )
+    return config
+
+
+def _workspace_exists(config, args, next_step: str) -> bool:
+    """Read-only commands must not create a workspace as a side effect."""
+    if Path(config.database_path).is_file():
+        return True
+    message = (
+        f"No cintel workspace found at {config.output_directory}. "
+        f"Run `cintel init`, then `{next_step}`."
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {"error": {"type": "WorkspaceNotFound", "message": message}},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(message)
+    return False
+
+
 def _resolve_config(
     config_path: Path | None,
     repository: Path | None,
     output_directory: Path | None,
 ):
+    """Return the configuration and a description of where it came from."""
     if config_path is not None:
-        return load_config(config_path.expanduser().resolve())
+        resolved_path = config_path.expanduser().resolve()
+        return load_config(resolved_path), f"{resolved_path} (from --config)"
     root = (repository or Path.cwd()).expanduser().resolve()
     conventional = root / ".code-intelligence" / "config.toml"
     if conventional.is_file():
         config = load_config(conventional)
         if output_directory is None:
-            return config
+            return config, str(conventional)
         resolved = output_directory.expanduser().resolve()
-        return replace(
-            config,
-            output_directory=str(resolved),
-            database_path=str(resolved / "index.sqlite"),
+        return (
+            replace(
+                config,
+                output_directory=str(resolved),
+                database_path=str(resolved / "index.sqlite"),
+            ),
+            f"{conventional} with --output-directory {resolved}",
         )
-    return default_config(root, output_directory)
+    return (
+        default_config(root, output_directory),
+        f"built-in defaults for {root}",
+    )
 
 
 def _create_build_configuration(app, config, args):

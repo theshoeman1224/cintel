@@ -89,6 +89,9 @@ progress detail to standard error" (`cli/main.py:91`). No code reads
 unconditional. `docs/CLI_REDESIGN_BRIEF.md` also plans more `--verbose`
 logging.
 
+Status 2026-10-21: fixed in Phase 4. `--verbose` prints the configuration
+source and the command's run time to standard error.
+
 **C3 (Medium). Interactive `build discover` prints the preview twice.** On a
 TTY, the evaluation command and the `$(shell ...)` warning print twice,
 because the unconditional block (`cli/main.py:378-388`) is followed by a
@@ -138,16 +141,27 @@ back silently. The `default` default is unchanged.
 "read persisted state only". `symbols` on a fresh directory creates
 `.code-intelligence/index.sqlite`.
 
+Status 2026-10-21: fixed in Phase 4. Queries, `context`, `build units`, and
+`build show` check for the database first. Without it they exit 1 with an
+init hint (`WorkspaceNotFound` under `--json`) and create nothing.
+
 **C8 (Low). `report` is not read-only.** AGENTS.md groups `report` with the
 read-only queries. `ReportService.generate_all` re-scans the repository and
 rewrites the inventory (`application/reports.py:113`). The README's
 "regenerates every report family from persisted state" is accurate for the
 families under `reports/`, but not for the inventory.
 
+Status 2026-10-21: documented. AGENTS.md has said since PR #7 that `report`
+re-scans, and since Phase 4 that it creates the workspace if needed. The
+behavior is intentional and was not changed.
+
 **C9 (Low). `[ai] enabled = true` is ignored without a warning.** The loader
 reads the value (`configuration/loader.py:49`) and nothing checks it. The
 README says future providers must require explicit approval. A user who sets
 the flag gets no signal that it does nothing.
+
+Status 2026-10-21: fixed in Phase 4. Every command warns on standard error,
+and `doctor` reports the new `CI-CONF-001` warning diagnostic.
 
 ### `start.sh` against README and IMPROVEMENT_PLAN
 
@@ -398,6 +412,14 @@ Docs: `tests/fixtures/README.md` (who writes in place), README "Test
 fixtures", and the fixture tally in the roadmap.
 
 ### Phase 4: small CLI contract fixes
+
+Status: complete (2026-10-21). C2, C7, and C9 landed with tests that failed
+first, and so did the optional diagnostic grouping: 19 identical
+`CI-BUILD-005` lines now print once with a count and the missing file's
+path. `--verbose` was kept and implemented rather than removed. Two
+SonarCloud follow-ups came with it: coverage now measures `scripts/` (Sonar
+already listed it as source, so its new lines counted as uncovered), and
+one S8495 smell in the new analysis helper was fixed.
 
 1. **C2.** Make `--verbose` do what the help says: print to stderr which
    config source won (flag, conventional file, or defaults), plus stage

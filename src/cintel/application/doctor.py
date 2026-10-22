@@ -126,6 +126,23 @@ class DoctorService:
                 )
             )
 
+        if config.ai_enabled:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCode.CONFIGURATION_SETTING_IGNORED,
+                    severity=DiagnosticSeverity.WARNING,
+                    message=(
+                        "[ai] enabled = true has no effect: AI integration is "
+                        "not implemented, and no source is sent anywhere."
+                    ),
+                    missing_capability="ai_generation",
+                    recoverability=Recoverability.USER_ACTION,
+                    suggested_actions=(
+                        "Set `enabled = false` in the [ai] section of config.toml.",
+                    ),
+                )
+            )
+
         capabilities = _doctor_capabilities(
             writable=writable, make_available=make_available, gcc_available=gcc_available
         )

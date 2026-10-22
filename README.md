@@ -175,13 +175,27 @@ contents differ from the configuration it would create.
 ## Exit codes and output
 
 - `0`: success.
-- `1`: the query ran but matched nothing, or a function name was ambiguous or absent.
+- `1`: the query ran but matched nothing, a function name was ambiguous or
+  absent, or a read-only command found no workspace.
 - `2`: an error, including configuration, storage, and validation failures.
 
 Every command accepts `--json`. Errors render as a structured
 `{"error": {...}}` object on standard output and keep the same exit codes.
-Text output includes `Action:` lines with next steps when a diagnostic
-carries them.
+Text output prints each distinct diagnostic once, with an occurrence count
+when it repeats, the related paths (up to five), and `Action:` lines with
+next steps when the diagnostic carries them.
+
+The read-only commands (`symbols`, `show function`, `callers`, `callees`,
+`context function`, `build units`, and `build show`) never create a
+workspace. Without one they print the `cintel init` hint and exit 1; with
+`--json` the hint is a `{"error": {"type": "WorkspaceNotFound", ...}}`
+object.
+
+`--verbose` prints, on standard error, which configuration was used
+(`--config`, the repository's `.code-intelligence/config.toml`, or built-in
+defaults) and how long the command took. Setting `enabled = true` under
+`[ai]` has no effect: AI integration is not implemented. Every command warns
+about it on standard error, and `doctor` reports `CI-CONF-001`.
 
 ## Example repository
 

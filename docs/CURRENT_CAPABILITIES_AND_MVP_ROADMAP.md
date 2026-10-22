@@ -445,7 +445,9 @@ The codebase currently emits stable codes in these families:
 - `CI-INPUT-001` through `CI-INPUT-003`; and
 - `CI-PARSE-001`; and
 - `CI-ANLZ-001`; and
-- `CI-GEN-001`.
+- `CI-GEN-001`; and
+- `CI-CONF-001` (a configuration setting that has no effect, currently
+  `[ai] enabled = true`).
 
 All identifiers are defined once as the `DiagnosticCode` enumeration in
 `cintel.domain.diagnostics`; the string values are the public contract.

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from cintel.application.doctor import DoctorService
@@ -129,4 +130,14 @@ class DoctorTests(unittest.TestCase):
         )
         self.assertEqual(CapabilityStatus.UNAVAILABLE, capability.status)
         self.assertIn("not implemented", capability.reason)
+
+    def test_enabled_ai_setting_is_reported_as_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(default_config(Path(directory)), ai_enabled=True)
+            report = DoctorService(SuccessfulFakeRunner()).inspect(config)
+        diagnostic = next(
+            item for item in report.diagnostics if item.code == "CI-CONF-001"
+        )
+        self.assertEqual("warning", diagnostic.severity.value)
+        self.assertIn("not implemented", diagnostic.message)
 
