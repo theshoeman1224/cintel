@@ -95,15 +95,27 @@ because the unconditional block (`cli/main.py:378-388`) is followed by a
 duplicate `if interactive:` block (`cli/main.py:389-399`). Reproduced under
 `script`. The README promises one preview followed by a confirmation.
 
+Status 2026-10-21: fixed in Phase 1. The duplicate block is gone, and
+`test_interactive_build_discover_previews_once` checks that the preview
+prints exactly once.
+
 **C4 (Medium). `doctor` always recommends `cintel init`.** When no other
 action applies, `application/doctor.py:133-134` appends "Run
 `cintel init <repository>`", even right after `init` succeeded. `start.sh`
 prints this on every run.
 
+Status 2026-10-21: fixed in Phase 1. `doctor` recommends `init` only when
+`config.toml` is missing, and otherwise points at `scan` and
+`build discover` or `setup`.
+
 **C5 (Medium). `doctor` reports `gcc_enrichment: available`.** The README
 and roadmap both say GCC enrichment is not implemented (Phase 7).
 `application/doctor.py:240-244` marks the capability available whenever a
 GCC executable exists.
+
+Status 2026-10-21: fixed in Phase 1. `gcc_enrichment` is always
+`unavailable`, and the reason says whether GCC was found. GCC still appears
+under `Tools:`.
 
 **C6 (Medium). The `--build-config` default silently changes results.** The
 help text documents the `default` default, but after
@@ -116,6 +128,11 @@ help text documents the `default` default, but after
 
 The 2026-10-10 audit lists this as finding 8 and marks it fixed. Only the
 help text changed.
+
+Status 2026-10-21: fixed in Phase 1. `build units` and `build show` name the
+requested configuration and list the discovered ones. `analyze` adds an
+info-level `CI-ANLZ-001` diagnostic with the same list instead of falling
+back silently. The `default` default is unchanged.
 
 **C7 (Low). Read-only commands create a workspace.** AGENTS.md says queries
 "read persisted state only". `symbols` on a fresh directory creates
@@ -246,6 +263,13 @@ The ground rules match the earlier plans:
 - Each phase ends with the doc updates listed under it.
 
 ### Phase 1: correctness bugs (code)
+
+Status: complete (2026-10-21). C1 landed earlier in PR #7; C3–C6 landed in
+this phase, each with a test that failed first. Two parts of the original C1
+plan were dropped: queries follow the latest `analyze` scope and take no
+`--build-config` override (rerunning `analyze` is cheap thanks to reuse),
+and report entries carry no `configuration` field, because a report now
+covers exactly one scope.
 
 1. **C1, scoped analysis results.** Give every query and report one analysis
    scope instead of a union.

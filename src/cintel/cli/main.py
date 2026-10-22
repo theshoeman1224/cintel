@@ -347,15 +347,28 @@ def _run_build(app, args) -> int:
         return _run_build_discover(app, config, args)
     if args.build_command == "units":
         units = app.build_discovery.list_units(config, args.build_config)
-        print(render_compilation_units(units, args.json))
-        return ExitCode.SUCCESS if units else ExitCode.NO_MATCH
+        return _print_units(app, config, args, units)
     if args.build_command == "show":
         units = app.build_discovery.show_source(
             config, args.source_file, args.build_config
         )
-        print(render_compilation_units(units, args.json))
-        return ExitCode.SUCCESS if units else ExitCode.NO_MATCH
+        return _print_units(app, config, args, units)
     return ExitCode.FAILURE
+
+
+def _print_units(app, config, args, units) -> int:
+    discovered = (
+        () if units else app.build_discovery.configuration_names(config)
+    )
+    print(
+        render_compilation_units(
+            units,
+            args.json,
+            requested_configuration=args.build_config,
+            discovered_configurations=discovered,
+        )
+    )
+    return ExitCode.SUCCESS if units else ExitCode.NO_MATCH
 
 
 def _run_build_discover(app, config, args) -> int:
@@ -386,18 +399,6 @@ def _run_build_discover(app, config, args) -> int:
         "Warning: make -n may evaluate $(shell ...) expressions.",
         file=sys.stderr,
     )
-    if interactive:
-        print(
-            "Make evaluation command: "
-            + _redacted_command_preview(
-                preview, configuration.environment_overrides
-            ),
-            file=sys.stderr,
-        )
-        print(
-            "Warning: make -n may evaluate $(shell ...) expressions.",
-            file=sys.stderr,
-        )
     if interactive:
         answer = input("Proceed with Makefile evaluation? [y/N] ")
         if answer.strip().lower() not in {"y", "yes"}:

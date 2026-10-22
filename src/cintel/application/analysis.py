@@ -145,7 +145,11 @@ class SourceAnalysisService:
             entry_points, unreachable, recursive_names = _graph_analytics(
                 target_outcome.results.values()
             )
-            diagnostics = _run_diagnostics(target_outcome.failed)
+            diagnostics = _run_diagnostics(target_outcome.failed) + (
+                _missing_configuration_diagnostics(
+                    storage, repository_id, build_configuration_name, inputs
+                )
+            )
             status = _record_analysis_state(
                 storage, repository_id, diagnostics, build_configuration_name
             )
@@ -592,6 +596,47 @@ def _reachable_from(entry_ids: list[str], adjacency: dict[str, set[str]]) -> set
         reachable.add(node)
         pending.extend(adjacency[node] - reachable)
     return reachable
+
+
+def _missing_configuration_diagnostics(
+    storage: AnalysisStorage,
+    repository_id: str,
+    build_configuration_name: str | None,
+    inputs: _AnalysisInputs,
+) -> tuple[Diagnostic, ...]:
+    """Say so when the requested configuration has no units but others do.
+
+    Without this, a plain ``analyze`` after ``build discover --build-config
+    NAME`` silently falls back to file-scoped analysis.
+    """
+    if build_configuration_name is None or inputs.units:
+        return ()
+    others = sorted(
+        {
+            item.name
+            for item in storage.list_build_configurations(repository_id)
+            if item.name != build_configuration_name
+        }
+    )
+    if not others:
+        return ()
+    return (
+        Diagnostic(
+            code=DiagnosticCode.SOURCE_ANALYSIS_INCOMPLETE,
+            severity=DiagnosticSeverity.INFO,
+            message=(
+                f"Build configuration `{build_configuration_name}` has no "
+                "compilation units, so analysis is file-scoped. Discovered "
+                f"configurations: {', '.join(others)}."
+            ),
+            missing_capability="build_aware_analysis",
+            recoverability=Recoverability.USER_ACTION,
+            suggested_actions=(
+                f"Rerun with --build-config {others[0]} before the subcommand "
+                "for build-aware analysis.",
+            ),
+        ),
+    )
 
 
 def _run_diagnostics(failed: int) -> tuple[Diagnostic, ...]:

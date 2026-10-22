@@ -74,7 +74,8 @@ help text and adds a `cintel status` pointer to each hint.
 
 - `status` lists configuration names with unit counts.
 - When `analyze` or `build units` finds no units for the requested name but
-  other configurations exist, print their names.
+  other configurations exist, print their names. (Done 2026-10-21: `build
+  units`, `build show`, and `analyze` list them.)
 - Consider defaulting to the only configuration when exactly one exists,
   instead of the literal `default`.
 

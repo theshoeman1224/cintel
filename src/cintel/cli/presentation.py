@@ -133,12 +133,32 @@ def render_build_discovery(
 
 
 def render_compilation_units(
-    units: tuple[CompilationUnit, ...], as_json: bool = False
+    units: tuple[CompilationUnit, ...],
+    as_json: bool = False,
+    *,
+    requested_configuration: str | None = None,
+    discovered_configurations: tuple[str, ...] = (),
 ) -> str:
-    """Render compilation units as text or JSON."""
+    """Render compilation units as text or JSON.
+
+    An empty result names the requested configuration and, when other
+    configurations were discovered, lists them so the user can pick one.
+    """
     if as_json:
         return _json(units)
     if not units:
+        others = tuple(
+            name
+            for name in discovered_configurations
+            if name != requested_configuration
+        )
+        if requested_configuration is not None and others:
+            return (
+                "No compilation units found for build configuration "
+                f"`{requested_configuration}`. Discovered configurations: "
+                + ", ".join(others)
+                + ". Pass --build-config NAME before the subcommand."
+            )
         return (
             "No compilation units found. Run `cintel build discover` first "
             "if build evidence has not been imported."

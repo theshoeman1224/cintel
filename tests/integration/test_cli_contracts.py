@@ -287,6 +287,66 @@ class CLIContractTests(unittest.TestCase):
             self.assertIn("Make evaluation command:", stderr)
             self.assertIn("may evaluate", stderr)
 
+    def test_interactive_build_discover_previews_once(self) -> None:
+        class _Terminal(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch("sys.stdin", _Terminal()),
+                mock.patch("builtins.input", return_value="n"),
+            ):
+                code, _, stderr = _run(
+                    "--repository", str(root), "build", "discover"
+                )
+        self.assertEqual(2, code)
+        self.assertEqual(1, stderr.count("Make evaluation command:"))
+        self.assertEqual(1, stderr.count("may evaluate"))
+        self.assertIn("Build discovery cancelled.", stderr)
+
+    def test_missing_build_configuration_names_the_discovered_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            (root / "src").mkdir(parents=True)
+            (root / "src" / "main.c").write_text(
+                "int main(void) { return 0; }\n", encoding="utf-8"
+            )
+            (root / "Makefile").write_text("all:\n\tgcc -c src/main.c\n", encoding="utf-8")
+            evidence = Path(directory) / "dry-run.txt"
+            evidence.write_text("gcc -c src/main.c -o main.o\n", encoding="utf-8")
+            base = ["--repository", str(root)]
+            _run("init", str(root))
+            code, stdout, _ = _run(
+                *base, "--build-config", "debug", "--makefile", "Makefile",
+                "--non-interactive", "--input-file", str(evidence),
+                "build", "discover",
+            )
+            self.assertEqual(0, code, stdout)
+
+            code, stdout, _ = _run(*base, "build", "units")
+            self.assertEqual(1, code)
+            self.assertIn("`default`", stdout)
+            self.assertIn("Discovered configurations: debug", stdout)
+
+            code, stdout, _ = _run(*base, "build", "show", "src/main.c")
+            self.assertEqual(1, code)
+            self.assertIn("Discovered configurations: debug", stdout)
+
+            code, stdout, _ = _run(*base, "--json", "analyze")
+            self.assertEqual(0, code, stdout)
+            summary = json.loads(stdout)
+            messages = [item["message"] for item in summary["diagnostics"]]
+            self.assertTrue(
+                any("`default`" in item and "debug" in item for item in messages),
+                messages,
+            )
+
+            code, stdout, _ = _run(*base, "--build-config", "debug", "--json", "analyze")
+            self.assertEqual(0, code, stdout)
+            self.assertEqual([], json.loads(stdout)["diagnostics"])
+
 
 if __name__ == "__main__":
     unittest.main()
