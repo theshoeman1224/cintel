@@ -93,7 +93,7 @@ documented `cintel` CLI flow):
 ```bash
 python scripts/fixtures.py list                      # fixtures, requirements, operations
 python scripts/fixtures.py setup complex_c_project   # build generated fixture artifacts
-python scripts/fixtures.py verify all                # fixture self-checks
+python scripts/fixtures.py verify all                # fixture self-checks (on a temporary copy)
 python scripts/fixtures.py clean all                 # remove generated artifacts
 python scripts/fixtures.py run complex_c_project     # bootstrap, analyze, validate
 ```

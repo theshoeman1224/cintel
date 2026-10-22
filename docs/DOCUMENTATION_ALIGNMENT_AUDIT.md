@@ -236,8 +236,15 @@ committed fixture path and its modification time are unchanged afterwards.
 The driver's `verify` operation still runs in place by design, and
 `tests/fixtures/README.md` now says so.
 
+Status 2026-10-21, Phase 3: the driver's `verify` now runs on an exact
+temporary copy too (`scripts/fixtures.py`, `_execute`). No fixture file
+changed.
+
 **F3 (Low). Python 3.11 is never tested.** `requires-python = ">=3.11"`,
 and the README says to use `python3.11`. Both CI workflows run only 3.12.
+
+Status 2026-10-21: fixed in Phase 3. `quality.yml` runs ruff, mypy, and the
+suite on a 3.11 and 3.12 matrix.
 
 ### Documentation that disagrees with itself or is stale
 
@@ -352,6 +359,15 @@ Docs: README "Quickest start" (copy behavior, configuration prompt, accepted
 input types). Reopen and then close audit finding 11 in `CODEBASE_AUDIT.md`.
 
 ### Phase 3: fixture and test alignment
+
+Status: complete (2026-10-21). F1 and F2 landed in PR #7. F2 used an
+mtime snapshot of the fixture instead of `git status`, because rewrites with
+identical content leave git clean. F1 fails on any "not exported" finding
+rather than on a numeric floor. In this phase, the driver's `verify` moved
+onto a temporary copy, so no further `fixture.py` edit was needed. The CI
+matrix landed, and the generated `build/`, `generated/`, and stale
+`.code-intelligence/` were cleaned out of the local fixture. The suite no
+longer recreates them.
 
 1. **F2 (no exception needed).** Change
    `test_fixture_builds_and_current_cintel_subset_validates` to copy the

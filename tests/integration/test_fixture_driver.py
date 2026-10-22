@@ -5,6 +5,7 @@ import io
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -68,6 +69,45 @@ class FixtureDriverDiscoveryTests(unittest.TestCase):
             )
         self.assertEqual(0, code)
         self.assertIn("skipped: data-only fixture", buffer.getvalue())
+
+    def test_verify_runs_on_a_copy_and_leaves_the_fixture_alone(self) -> None:
+        seen: list[Path] = []
+        stray_visible: list[bool] = []
+
+        def verify(context) -> None:
+            seen.append(context.fixture_root)
+            stray_visible.append(
+                (context.fixture_root / ".code-intelligence").is_dir()
+            )
+            # Self-checks may build or regenerate files; they must land in
+            # the copy, never in the committed fixture.
+            (context.fixture_root / "generated-by-verify.txt").write_text(
+                "x", encoding="utf-8"
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "basic"
+            shutil.copytree(BASIC_FIXTURE, root)
+            (root / ".code-intelligence").mkdir()
+            fixture = driver.Fixture(
+                name="fake", fixture_root=root, module=types.SimpleNamespace(verify=verify)
+            )
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = driver.apply_operation(
+                    [fixture],
+                    "verify",
+                    argparse.Namespace(
+                        output_dir=None, no_bootstrap=True, python=None, verbose=False
+                    ),
+                )
+            self.assertEqual(0, code, buffer.getvalue())
+            self.assertEqual(1, len(seen))
+            self.assertNotEqual(root, seen[0])
+            self.assertFalse(seen[0].exists())
+            self.assertFalse((root / "generated-by-verify.txt").exists())
+            # Stray-state checks must still see what is in the real fixture.
+            self.assertEqual([True], stray_visible)
 
 
 class FixtureDriverOperationTests(unittest.TestCase):
