@@ -73,4 +73,7 @@ python scripts/fixtures.py run complex_c_project       # fixture bootstrap and v
 - `docs/IMPROVEMENT_PLAN.md`: phased work with status per phase.
 - `docs/CODEBASE_AUDIT.md`: findings with file:line evidence.
 - `docs/CURRENT_CAPABILITIES_AND_MVP_ROADMAP.md`: what works today and what is next.
+- `docs/DOCUMENTATION_ALIGNMENT_AUDIT.md`: code, script, and doc drift findings with a status per finding.
+- `docs/CLI_REDESIGN_BRIEF.md`: proposed CLI redesign (status command, JSON envelope); mostly not started.
+- `docs/REFACTOR_PLAN.md`: completed refactor plan; historical.
 - `README.md`: user-facing setup and command reference.

@@ -147,7 +147,11 @@ cintel --repository /path/to/legacy-c-repository report
 ```
 
 Global options such as `--repository`, `--config`, and `--build-config` must
-appear before the subcommand. Generated state is kept under
+appear before the subcommand. `--output-directory` moves the workspace
+somewhere other than `<repository>/.code-intelligence/`.
+`--make-working-directory` sets the directory Make runs in (default: the
+repository root), and `--env NAME=value` (repeatable) adds an environment
+override for the Make run. Generated state is kept under
 `.code-intelligence/`. `init` will not overwrite a configuration whose
 contents differ from the configuration it would create.
 
@@ -202,12 +206,15 @@ about it on standard error, and `doctor` reports `CI-CONF-001`.
 `tests/fixtures/complex_c_project` is a representative Make-based C
 repository with multiple build configurations, recursive Make, generated
 inputs, wrapper commands, plugins, and saved dry-run evidence. It doubles as
-the demo in `./start.sh` and as the tool's own end-to-end test subject. Copy
-it before running the full flow so the committed fixture stays untouched:
+the demo in `./start.sh` and as the tool's own end-to-end test subject.
+`./start.sh` copies it for you; to run the flow by hand, copy it first so the
+committed fixture stays untouched, and build its generated inputs in the copy
+(without that step, build discovery warns about the missing generated files):
 
 ```bash
 cp -r tests/fixtures/complex_c_project /tmp/cintel-demo
 rm -rf /tmp/cintel-demo/.code-intelligence
+make -s -C /tmp/cintel-demo generate CONFIG=linux
 cintel init /tmp/cintel-demo
 cintel --repository /tmp/cintel-demo doctor
 cintel --repository /tmp/cintel-demo scan
@@ -280,10 +287,14 @@ repository inventory stays at its conventional locations):
   compiler, define, and include-path counts;
 - `reports/function_index.{md,json}` — every analyzed function with
   definition/declaration state, linkage, and location;
+- `reports/symbol_index.{md,json}` — every stored function, variable,
+  type, and macro with definition state, linkage, and location;
 - `reports/call_graph.{md,json}` — deduplicated direct-call edges with
   call-site lines, callee definitions, and explicit unresolved edges;
 - `reports/include_index.{md,json}` — include directives with resolved
   targets;
+- `reports/global_usage.{md,json}` — each function's references to
+  global variables, with where the function and the variable live;
 - `reports/diagnostics_index.{md,json}` and
   `reports/capability_index.{md,json}` — every diagnostic and capability
   record with provenance classification.
@@ -437,8 +448,11 @@ The domain imports no process, SQLite, Make, GCC, CLI-library, or AI-SDK code.
 To add a build-system adapter, implement `BuildDiscoveryProvider` and construct
 it in the composition root. Build-specific parsing stays in that adapter.
 
-To add a compiler adapter, implement `CompilerProvider`; capability probing and
-compiler-specific flags must not leak into domain or application services.
+To add a compiler adapter, implement `CompilerCommandParser` (turns a compiler
+command into a normalized invocation) and, for identity probing,
+`CompilerMetadataProvider`. Capability probing and compiler-specific flags must
+not leak into domain or application services. `CompilerProvider` is a reserved
+port for future GCC enrichment; nothing implements or consumes it yet.
 
 To add a parser adapter, implement `SourceParser`. It must report confidence and
 diagnostics rather than claiming unsupported semantic certainty.
@@ -446,8 +460,9 @@ diagnostics rather than claiming unsupported semantic certainty.
 To add a report format, implement `ReportRenderer` and keep serialization or
 template details in its adapter.
 
-Future AI integration will implement `AIProvider`. It is optional by design and
-must not become a dependency of deterministic indexing or context selection.
+`AIProvider` is likewise reserved: only the disabled provider implements it,
+and no service calls it. Future AI integration is optional by design and must
+not become a dependency of deterministic indexing or context selection.
 
 ## Configuration
 

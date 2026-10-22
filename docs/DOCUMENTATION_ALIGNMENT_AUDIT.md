@@ -441,6 +441,20 @@ AGENTS.md command flow (C7, C8).
 
 ### Phase 5: documentation sync (docs only)
 
+Status: complete (2026-10-21). D1–D16 are fixed: the README report list and
+adapter seams, AGENTS.md command flow and doc map, the roadmap header,
+counts (318 tests: 256 unit, 62 integration; fixture passed=29), architecture
+table, and phase attribution, the IMPROVEMENT_PLAN counts and commit note,
+the CLI brief, `.portfolio/`, and the REFACTOR_PLAN historical note. D14 was
+resolved by Phase 2's README rewrite plus a `make generate` step in the manual
+demo. D15 was resolved by Phase 3, so the suite no longer produces artifacts
+in the fixture. `tests/unit/test_documentation_drift.py` adds the drift
+guards: the README report list matches `_REPORT_FAMILIES`, every CLI flag and
+command appears in the README, every diagnostic family appears in the
+roadmap, and AGENTS.md maps every file in `docs/`. The README now documents
+`--output-directory`, `--make-working-directory`, and `--env`, which the flag
+guard found undocumented.
+
 Fix D1–D16 in one pass, after Phases 1–4 so the numbers are final:
 
 - README: the full report family list (D1), the adapter section naming the

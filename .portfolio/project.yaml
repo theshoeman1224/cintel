@@ -24,9 +24,12 @@ project:
     workflows independent of subprocesses, SQLite, compilers, and presentation.
     Incremental fingerprints and schema migrations support durable, resumable
     work, while structured capabilities and diagnostics make incomplete
-    toolchains explicit. A conservative C parser can extract per-file symbols
-    and includes with confidence metadata; cross-file resolution and end-user
-    analysis queries remain active roadmap work.
+    toolchains explicit. A conservative C parser extracts symbols, includes,
+    and call candidates with confidence metadata; the analysis service
+    resolves calls and includes across files, and the CLI answers symbol,
+    caller, and callee queries, builds budgeted function context packages, and
+    writes Markdown/JSON report families. Optional GCC enrichment remains
+    roadmap work.
 
   status: "active"
 

@@ -13,8 +13,9 @@ The CLI grew command by command, and the seams show:
   subcommand, a rule argparse cannot express with one parser;
 - `--build-config` defaults to `default`, so a user who discovered `debug`
   gets silently file-scoped analysis from a plain `analyze`;
-- error text and JSON output have no shared shape, and errors never render as
-  JSON;
+- error text and JSON output have no shared shape (errors do render as a
+  `{"error": {...}}` object under `--json`, but success payloads have no
+  common envelope);
 - out-of-order commands fail by different conventions: `scan` auto-runs for
   `analyze` and `report`, but queries do not auto-run `analyze`;
 - `show function`, `symbols`, and `build units` follow no single naming rule;
@@ -63,12 +64,15 @@ Make the policy explicit instead of accidental:
 | `scan` | workspace | create it silently |
 | `analyze` | scan | auto-scan |
 | `report` | analyze | generate from stored state and warn |
+| queries, context | workspace | print a `cintel init` hint, exit 1, create nothing |
 | queries, context | analyze | print a `cintel analyze` hint, exit 1 |
+| `build units`, `build show` | workspace | print a `cintel init` hint, exit 1, create nothing |
 | `build units`, `build show` | discovery | hint at `build discover`, exit 1 |
 | `build discover` | none | never auto-run make; always preview and warn |
 
-This is already the behavior after Phase 2. The redesign documents it in
-help text and adds a `cintel status` pointer to each hint.
+This is the behavior as of 2026-10-21; the workspace rows landed in
+alignment Phase 4. The redesign documents it in help text and adds a
+`cintel status` pointer to each hint.
 
 ### Build configuration selection
 
