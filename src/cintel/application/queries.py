@@ -1,9 +1,12 @@
 """Read-only symbol and relationship queries over stored source analyses.
 
 The service projects stored analysis state into developer-facing entries.
+Every query reads only the analysis scope of the latest ``analyze`` run (see
+``analysis_scope``), so results from other build configurations never mix in.
 Because symbol ids embed the compilation-unit scope, the same definition can
-appear once per build configuration; every lookup therefore resolves names to
-all stored definition ids first and deduplicates results by source location.
+still appear once per compilation unit; every lookup therefore resolves names
+to all stored definition ids first and deduplicates results by source
+location.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from cintel.application.analysis_scope import AnalysisScope, active_scope
 from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
 from cintel.domain.models import (
@@ -110,8 +114,8 @@ class SymbolQueryService:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
-            occurrences = storage.find_symbols(
-                repository_id, kind=kind, name=name
+            occurrences = active_scope(storage, repository_id).keep(
+                storage.find_symbols(repository_id, kind=kind, name=name)
             )
             entries = _deduplicate(
                 _entry(occurrence, files_by_id) for occurrence in occurrences
@@ -129,8 +133,9 @@ class SymbolQueryService:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
-            occurrences = storage.find_symbols(
-                repository_id, kind="function", name=name
+            scope = active_scope(storage, repository_id)
+            occurrences = scope.keep(
+                storage.find_symbols(repository_id, kind="function", name=name)
             )
             definitions = _definition_occurrences(occurrences, file, files_by_id)
             if not definitions:
@@ -149,10 +154,11 @@ class SymbolQueryService:
                 definition=definition,
                 declarations=declarations,
                 callers=self._callers(
-                    storage, repository_id, definition, definition_ids, files_by_id
+                    storage, scope, repository_id, definition, definition_ids,
+                    files_by_id,
                 ),
                 callees=self._callees(
-                    storage, repository_id, definition_ids, files_by_id
+                    storage, scope, repository_id, definition_ids, files_by_id
                 ),
             )
 
@@ -167,7 +173,10 @@ class SymbolQueryService:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
-            definitions = _definitions(storage, repository_id, name, file, files_by_id)
+            scope = active_scope(storage, repository_id)
+            definitions = _definitions(
+                storage, scope, repository_id, name, file, files_by_id
+            )
             if not definitions:
                 return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
@@ -175,7 +184,8 @@ class SymbolQueryService:
                 return _candidates(name, definitions, files_by_id)
             definition, definition_ids = selected
             return self._callers(
-                storage, repository_id, definition, definition_ids, files_by_id
+                storage, scope, repository_id, definition, definition_ids,
+                files_by_id,
             )
 
     def callees(
@@ -189,7 +199,10 @@ class SymbolQueryService:
         with storage_session(self._storage_factory, app_config.database_path) as storage:
             repository_id = stable_repository_id(app_config.repository_root)
             files_by_id = _files_by_id(storage, repository_id)
-            definitions = _definitions(storage, repository_id, name, file, files_by_id)
+            scope = active_scope(storage, repository_id)
+            definitions = _definitions(
+                storage, scope, repository_id, name, file, files_by_id
+            )
             if not definitions:
                 return FunctionNotFound(name=name)
             selected = _select_definition(definitions, files_by_id)
@@ -197,24 +210,29 @@ class SymbolQueryService:
                 return _candidates(name, definitions, files_by_id)
             _, definition_ids = selected
             return self._callees(
-                storage, repository_id, definition_ids, files_by_id
+                storage, scope, repository_id, definition_ids, files_by_id
             )
 
     def _callers(
         self,
         storage: AnalysisStorage,
+        scope: AnalysisScope,
         repository_id: str,
         definition: SymbolEntry,
         definition_ids: tuple[str, ...],
         files_by_id: dict[str, RepositoryFile],
     ) -> tuple[CallSite, ...]:
         edges = list(
-            storage.find_call_edges(repository_id, callee_ids=definition_ids)
+            scope.keep(
+                storage.find_call_edges(repository_id, callee_ids=definition_ids)
+            )
         )
         edges.extend(
             edge
-            for edge in storage.find_call_edges(
-                repository_id, callee_spelling=definition.name
+            for edge in scope.keep(
+                storage.find_call_edges(
+                    repository_id, callee_spelling=definition.name
+                )
             )
             if edge.call.callee_id is None
         )
@@ -246,11 +264,12 @@ class SymbolQueryService:
     def _callees(
         self,
         storage: AnalysisStorage,
+        scope: AnalysisScope,
         repository_id: str,
         definition_ids: tuple[str, ...],
         files_by_id: dict[str, RepositoryFile],
     ) -> tuple[CallSite, ...]:
-        edges = list(
+        edges = scope.keep(
             storage.find_call_edges(repository_id, caller_ids=definition_ids)
         )
         callee_ids = tuple(
@@ -279,12 +298,15 @@ class SymbolQueryService:
 
 def _definitions(
     storage: AnalysisStorage,
+    scope: AnalysisScope,
     repository_id: str,
     name: str,
     file: str | None,
     files_by_id: dict[str, RepositoryFile],
 ) -> list[SymbolOccurrence]:
-    occurrences = storage.find_symbols(repository_id, kind="function", name=name)
+    occurrences = scope.keep(
+        storage.find_symbols(repository_id, kind="function", name=name)
+    )
     return _definition_occurrences(occurrences, file, files_by_id)
 
 

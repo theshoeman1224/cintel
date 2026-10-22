@@ -283,9 +283,14 @@ query-projection columns):
 - empty results exit with status 1; `--json` renders every query as
   machine-readable output.
 
-Because symbol ids embed the compilation-unit scope, the same definition can
-be stored once per build configuration; queries collapse those duplicates by
-source location, so every symbol is presented once.
+Queries and reports read only the scope of the latest `analyze` run (the
+build configuration it used, recorded in its workflow state): that
+configuration's compilation units plus file-scoped results elsewhere, or
+file-scoped results only. Earlier runs under other configurations are kept but
+not mixed in, so a call site never appears as both resolved and unresolved.
+Within that scope, symbol ids still embed the compilation unit, so queries
+collapse per-unit duplicates by source location and present every symbol
+once.
 
 ### Function context packages
 

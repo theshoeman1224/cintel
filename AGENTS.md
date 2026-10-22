@@ -41,7 +41,7 @@ init -> doctor -> scan -> build discover (or resume with evidence) -> analyze ->
 - `scan` is safe to re-run; file hashes are reused when size and mtime match.
 - `build discover` runs `make -n -B` or imports validated evidence, and caches on the input fingerprint.
 - `analyze` reparses only changed targets, keyed on source hash, compilation-unit fingerprint, and parser version.
-- `symbols`, `show function`, `callers`, `callees`, `context function`, and `report` read persisted state only.
+- `symbols`, `show function`, `callers`, `callees`, `context function`, and `report` read persisted state only, limited to the latest `analyze` run's scope (`application/analysis_scope.py`). `report` also re-scans to refresh the inventory.
 - Exit codes: 0 success, 1 empty query result, 2 error.
 
 ## Invariants

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cintel.application.analysis_scope import AnalysisScope, active_scope
 from cintel.application.scanning import RepositoryScanService
 from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
@@ -195,9 +196,11 @@ def _gather(
     files_by_id = {item.id: item for item in files}
     configurations = storage.list_build_configurations(repository_id)
     units = storage.list_compilation_units(repository_id)
+    # Analysis-derived families read only the latest analyze run's scope.
+    scope = active_scope(storage, repository_id)
     analyzed_file_ids = {
         item.repository_file_id
-        for item in storage.list_source_analyses(repository_id)
+        for item in scope.keep_results(storage.list_source_analyses(repository_id))
     }
     return {
         "repository_inventory": RepositoryReportData(
@@ -212,11 +215,11 @@ def _gather(
         "compilation_units": CompilationUnitsReportData(
             entries=_compilation_units(units, configurations, files_by_id)
         ),
-        "function_index": _function_index(storage, repository_id, files_by_id),
-        "symbol_index": _symbol_index(storage, repository_id, files_by_id),
-        "call_graph": _call_graph(storage, repository_id, files_by_id),
-        "include_index": _include_index(storage, repository_id, files_by_id),
-        "global_usage": _global_usage(storage, repository_id, files_by_id),
+        "function_index": _function_index(storage, scope, repository_id, files_by_id),
+        "symbol_index": _symbol_index(storage, scope, repository_id, files_by_id),
+        "call_graph": _call_graph(storage, scope, repository_id, files_by_id),
+        "include_index": _include_index(storage, scope, repository_id, files_by_id),
+        "global_usage": _global_usage(storage, scope, repository_id, files_by_id),
         "diagnostics_index": DiagnosticsReportData(
             entries=storage.list_diagnostics(repository_id)
         ),
@@ -294,10 +297,11 @@ def _compilation_units(
 
 def _function_index(
     storage: AnalysisStorage,
+    scope: AnalysisScope,
     repository_id: str,
     files_by_id: dict[str, RepositoryFile],
 ) -> FunctionIndexReportData:
-    occurrences = storage.find_symbols(repository_id, kind="function")
+    occurrences = scope.keep(storage.find_symbols(repository_id, kind="function"))
     selected: dict[tuple[str, int, str], FunctionIndexEntry] = {}
     for occurrence in occurrences:
         symbol = occurrence.symbol
@@ -330,10 +334,11 @@ def _function_index(
 
 def _symbol_index(
     storage: AnalysisStorage,
+    scope: AnalysisScope,
     repository_id: str,
     files_by_id: dict[str, RepositoryFile],
 ) -> SymbolIndexReportData:
-    occurrences = storage.find_symbols(repository_id)
+    occurrences = scope.keep(storage.find_symbols(repository_id))
     selected: dict[tuple[str, int, str, str], SymbolIndexEntry] = {}
     for occurrence in occurrences:
         symbol = occurrence.symbol
@@ -386,10 +391,11 @@ def _path_of(
 
 def _global_usage(
     storage: AnalysisStorage,
+    scope: AnalysisScope,
     repository_id: str,
     files_by_id: dict[str, RepositoryFile],
 ) -> GlobalUsageReportData:
-    edges = storage.find_global_usage_edges(repository_id)
+    edges = scope.keep(storage.find_global_usage_edges(repository_id))
     function_ids = {
         edge.relationship.function_id
         for edge in edges
@@ -488,10 +494,11 @@ def _call_graph_entry(
 
 def _call_graph(
     storage: AnalysisStorage,
+    scope: AnalysisScope,
     repository_id: str,
     files_by_id: dict[str, RepositoryFile],
 ) -> CallGraphReportData:
-    edges = storage.find_call_edges(repository_id)
+    edges = scope.keep(storage.find_call_edges(repository_id))
     symbol_ids = {
         edge.call.caller_id for edge in edges if edge.call.caller_id is not None
     } | {
@@ -564,10 +571,11 @@ def _include_entry(
 
 def _include_index(
     storage: AnalysisStorage,
+    scope: AnalysisScope,
     repository_id: str,
     files_by_id: dict[str, RepositoryFile],
 ) -> IncludeIndexReportData:
-    edges = storage.find_include_edges(repository_id)
+    edges = scope.keep(storage.find_include_edges(repository_id))
     selected: dict[tuple[str, int, str], IncludeIndexEntry] = {}
     unresolved = 0
     for edge in edges:

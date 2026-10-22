@@ -125,5 +125,34 @@ class FixtureDriverOperationTests(unittest.TestCase):
         self.assertIn("run: incremental scan reuses results", output)
 
 
+    @unittest.skipUnless(
+        shutil.which("make") and shutil.which("gcc"),
+        "GNU Make and GCC are required for the complex fixture run",
+    )
+    def test_complex_run_validates_analysis_findings(self) -> None:
+        complex_fixture = next(
+            fixture
+            for fixture in driver.discover_fixtures()
+            if fixture.name == "complex_c_project"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            context = driver.FixtureContext(
+                repo_root=PROJECT_ROOT,
+                fixture_root=complex_fixture.fixture_root,
+                python=driver.resolve_python(None),
+                output_dir=Path(directory),
+            )
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                complex_fixture.execute("run", context)
+        output = buffer.getvalue()
+        self.assertIn("run: report", output)
+        self.assertIn("Missing: 0", output)
+        self.assertNotIn("not exported by current cintel phase", output)
+        # Mandatory analysis findings (functions, calls, includes, globals)
+        # must be validated, not only the inventory and build findings.
+        self.assertIn("- call-app-init-config", output)
+        self.assertIn("- fn-main", output)
+
 if __name__ == "__main__":
     unittest.main()

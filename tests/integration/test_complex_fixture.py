@@ -33,6 +33,17 @@ class SavedOutputRunner:
         )
 
 
+def _fixture_snapshot() -> dict[str, int]:
+    """Every fixture path with its modification time, ignoring caches."""
+    snapshot: dict[str, int] = {}
+    for path in sorted(FIXTURE.rglob("*")):
+        relative = path.relative_to(FIXTURE)
+        if {"__pycache__", ".code-intelligence"} & set(relative.parts):
+            continue
+        snapshot[relative.as_posix()] = path.stat().st_mtime_ns
+    return snapshot
+
+
 class ComplexFixtureIntegrationTests(unittest.TestCase):
     def test_saved_linux_dry_run_exercises_parser_without_external_tools(self) -> None:
         sample = (
@@ -218,23 +229,44 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
         "GNU Make and GCC are required for the live fixture verification",
     )
     def test_fixture_builds_and_current_cintel_subset_validates(self) -> None:
-        verification = subprocess.run(
-            [sys.executable, "tools/verify_fixture.py"],
-            cwd=FIXTURE,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=180,
+        # verify_fixture.py builds every configuration and rewrites the saved
+        # samples under expected/, so it runs on a copy; the committed
+        # fixture must come out of this test untouched.
+        before = _fixture_snapshot()
+        self.addCleanup(
+            lambda: self.assertEqual(
+                before, _fixture_snapshot(), "the committed fixture was modified"
+            )
         )
-        self.assertEqual(0, verification.returncode, verification.stdout + verification.stderr)
-
         with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory) / "complex_c_project"
+            shutil.copytree(
+                FIXTURE,
+                workspace,
+                ignore=shutil.ignore_patterns(
+                    ".code-intelligence", "build", "__pycache__"
+                ),
+            )
+            verification = subprocess.run(
+                [sys.executable, "tools/verify_fixture.py"],
+                cwd=workspace,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=180,
+            )
+            self.assertEqual(
+                0,
+                verification.returncode,
+                verification.stdout + verification.stderr,
+            )
+
             output_directory = Path(directory) / "analysis"
             with contextlib.redirect_stdout(io.StringIO()):
                 scan_code = cintel_main(
                     [
                         "--repository",
-                        str(FIXTURE),
+                        str(workspace),
                         "--output-directory",
                         str(output_directory),
                         "scan",
@@ -251,7 +283,7 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
                 build_code = cintel_main(
                     [
                         "--repository",
-                        str(FIXTURE),
+                        str(workspace),
                         "--output-directory",
                         str(output_directory),
                         "--makefile",
@@ -274,7 +306,7 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
                 analyze_code = cintel_main(
                     [
                         "--repository",
-                        str(FIXTURE),
+                        str(workspace),
                         "--output-directory",
                         str(output_directory),
                         "--build-config",
@@ -288,7 +320,7 @@ class ComplexFixtureIntegrationTests(unittest.TestCase):
                 report_code = cintel_main(
                     [
                         "--repository",
-                        str(FIXTURE),
+                        str(workspace),
                         "--output-directory",
                         str(output_directory),
                         "report",
