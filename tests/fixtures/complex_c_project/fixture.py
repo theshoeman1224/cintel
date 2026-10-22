@@ -22,6 +22,11 @@ REQUIRES = ("make", "gcc", "python3")
 CONFIGURATION = "linux"
 VERIFY_TIMEOUT = 600
 
+# Report families the validator reads as `analysis_report`.
+ANALYSIS_REPORTS = ("symbol_index", "call_graph", "include_index", "global_usage")
+# The validator's label for a finding whose report family was not supplied.
+NOT_EXPORTED = "not exported by current cintel phase"
+
 
 def _tools(context):
     return context.fixture_root / "tools"
@@ -64,7 +69,8 @@ def clean(context) -> None:
 
 
 def run(context) -> None:
-    """End-to-end user flow: init, doctor, scan, build discover, analyze, validate."""
+    """End-to-end user flow: init, doctor, scan, build discover, analyze,
+    report, then validate every finding against the expected manifest."""
     output_dir = context.output_dir or (
         context.repo_root / ".fixture-output" / NAME
     )
@@ -104,13 +110,26 @@ def run(context) -> None:
         print("  run: analyze")
         context.cintel([*common, "--build-config", CONFIGURATION, "analyze"])
 
+        print("  run: report")
+        context.cintel([*common, "report"])
+
         print("  run: validate against expected findings")
-        repository_report = json.loads(
-            (output_dir / "reports" / "repository.json").read_text(encoding="utf-8")
-        )
+
+        def load_report(name):
+            path = output_dir / "reports" / f"{name}.json"
+            return json.loads(path.read_text(encoding="utf-8"))
+
         actual = output_dir / "actual.json"
         actual.write_text(
-            json.dumps({"repository_report": repository_report, "build_report": build_report}),
+            json.dumps(
+                {
+                    "repository_report": load_report("repository"),
+                    "build_report": build_report,
+                    "analysis_report": {
+                        name: load_report(name) for name in ANALYSIS_REPORTS
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         validation = context.run(
@@ -129,5 +148,10 @@ def run(context) -> None:
             raise RuntimeError("expected-findings validation reported missing or conflicting results")
         if "Missing: 0" not in validation.stdout:
             raise RuntimeError("expected-findings validation did not pass cleanly")
+        if NOT_EXPORTED in validation.stdout:
+            raise RuntimeError(
+                "analysis findings were not validated; the analysis reports "
+                "are missing from the validation envelope"
+            )
 
     print(f"  run: outputs in {output_dir}")

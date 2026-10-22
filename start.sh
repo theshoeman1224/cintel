@@ -44,6 +44,23 @@ venv_ok() {
         && "$1/bin/python" -m pip --version >/dev/null 2>&1
 }
 
+resolve_repository() {
+    # resolve_repository PATH -> absolute directory on stdout, or an error
+    # on stderr and status 1. A leading ~ expands to $HOME.
+    local path="${1/#\~/$HOME}"
+    if [[ -z "$path" || ! -d "$path" ]]; then
+        echo "error: '$path' is not a directory." >&2
+        return 1
+    fi
+    (cd "$path" && pwd)
+}
+
+# Sourcing the script (as the tests do) loads the helpers above without
+# running the setup below.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
 # ---------------------------------------------------------------------------
 # 1. Find a suitable Python interpreter
 # ---------------------------------------------------------------------------
@@ -117,14 +134,13 @@ echo "Choose a legacy C repository to analyze."
 echo "A demo fixture is available at:"
 echo "  $PROJECT_ROOT/tests/fixtures/complex_c_project"
 echo
-prompt_value "Repository path" "$PROJECT_ROOT/tests/fixtures/complex_c_project"
-REPO="${REPLY/#\~/$HOME}"
-REPO="$(cd "$REPO" && pwd)"
-
-if [[ ! -d "$REPO" ]]; then
-    echo "error: $REPO is not a directory." >&2
-    exit 1
-fi
+while true; do
+    prompt_value "Repository path" "$PROJECT_ROOT/tests/fixtures/complex_c_project"
+    if REPO="$(resolve_repository "$REPLY")"; then
+        break
+    fi
+    echo "Enter an existing directory, or press Ctrl-C to quit."
+done
 
 echo
 echo "Plan:"

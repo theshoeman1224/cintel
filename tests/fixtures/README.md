@@ -20,9 +20,11 @@ python scripts/fixtures.py run complex_c_project     # full end-to-end lifecycle
 `run` bootstraps the environment through `scripts/install.py` (the same step
 `start.sh` performs), copies the fixture to a disposable workspace, drives the
 documented `cintel` CLI flow (`init`, `doctor`, `scan`, `build discover`,
-`analyze`), and validates the results against the fixture's expected findings.
-Committed fixture sources are never modified; only gitignored artifacts
-(`build/`, `generated/`) are produced in place, and only by `setup`.
+`analyze`, `report`), and validates the repository, build, and analysis reports
+against the fixture's expected findings. Committed fixture sources are never
+modified; only gitignored artifacts (`build/`, `generated/`) are produced in
+place, and only by the `setup` and `verify` operations. The test suite works on
+temporary copies and asserts that the committed fixture is left untouched.
 
 Useful flags for `setup`/`verify`/`clean`/`run`:
 

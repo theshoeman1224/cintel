@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cintel.application.analysis_capabilities import analysis_capabilities
+from cintel.application.analysis_scope import BUILD_CONFIGURATION_DETAIL
 from cintel.application.scanning import RepositoryScanService
 from cintel.application.storage_session import storage_session
 from cintel.configuration.models import AppConfig
@@ -145,7 +146,9 @@ class SourceAnalysisService:
                 target_outcome.results.values()
             )
             diagnostics = _run_diagnostics(target_outcome.failed)
-            status = _record_analysis_state(storage, repository_id, diagnostics)
+            status = _record_analysis_state(
+                storage, repository_id, diagnostics, build_configuration_name
+            )
             capabilities = analysis_capabilities(
                 target_count=len(inputs.targets),
                 reused=target_outcome.reused,
@@ -258,6 +261,7 @@ def _record_analysis_state(
     storage: AnalysisStorage,
     repository_id: str,
     diagnostics: tuple[Diagnostic, ...],
+    build_configuration_name: str | None,
 ) -> WorkflowStatus:
     if diagnostics:
         storage.save_diagnostics(repository_id, diagnostics, "analysis")
@@ -270,6 +274,10 @@ def _record_analysis_state(
             stage=WorkflowStage.SOURCE_ANALYSIS,
             status=status,
             updated_at=datetime.now(UTC),
+            # Queries and reports rebuild their scope from this name.
+            details=(
+                (BUILD_CONFIGURATION_DETAIL, build_configuration_name or ""),
+            ),
         )
     )
     return status
@@ -415,6 +423,9 @@ def _resolve_relationships(
     member_file_ids: frozenset[str] | None = None,
 ) -> _ResolutionOutcome:
     definitions = _function_definitions(results.items())
+    definition_ids = frozenset(
+        symbol.id for entries in definitions.values() for _, symbol in entries
+    )
     files_by_absolute = {
         str(normalized_path(Path(item.absolute_path))): item
         for item in files_by_id.values()
@@ -428,8 +439,8 @@ def _resolve_relationships(
             result, files_by_id, include_dirs_by_unit
         )
         relationships, result_changed = _rebuild_relationships(
-            result, definitions, search_directories, files_by_absolute,
-            member_file_ids,
+            result, definitions, definition_ids, search_directories,
+            files_by_absolute, member_file_ids,
         )
         counts += _count_relationships(relationships)
         if result_changed:
@@ -450,6 +461,7 @@ def _resolve_relationships(
 def _rebuild_relationships(
     result: SourceAnalysisResult,
     definitions,
+    definition_ids: frozenset[str],
     search_directories: tuple[str, ...],
     files_by_absolute: dict[str, RepositoryFile],
     member_file_ids: frozenset[str] | None = None,
@@ -459,15 +471,19 @@ def _rebuild_relationships(
     # Resolution is monotonic: only unresolved calls are retried, so an
     # already-resolved call keeps its target when a later pass introduces a
     # competing definition. --force-analysis rebuilds from scratch instead.
+    # The exception is a target outside this run: a file-scoped result shared
+    # by several runs may still point at another configuration's definition.
     for relationship in result.relationships:
         new_relationship = relationship
-        if (
-            isinstance(relationship, CallRelationship)
-            and relationship.resolution is RelationshipResolution.UNRESOLVED
+        if isinstance(relationship, CallRelationship) and (
+            relationship.resolution is RelationshipResolution.UNRESOLVED
+            or relationship.callee_id not in definition_ids
         ):
             new_relationship = _resolve_call(
-                relationship, result, definitions, member_file_ids
+                _unresolved(relationship), result, definitions, member_file_ids
             )
+            if new_relationship == relationship:
+                new_relationship = relationship
         elif isinstance(relationship, IncludeRelationship):
             new_relationship = _resolve_include(
                 relationship, search_directories, files_by_absolute
@@ -476,6 +492,16 @@ def _rebuild_relationships(
             result_changed = True
         relationships.append(new_relationship)
     return relationships, result_changed
+
+
+def _unresolved(relationship: CallRelationship) -> CallRelationship:
+    if relationship.resolution is RelationshipResolution.UNRESOLVED:
+        return relationship
+    return replace(
+        relationship,
+        callee_id=None,
+        resolution=RelationshipResolution.UNRESOLVED,
+    )
 
 
 def _count_relationships(

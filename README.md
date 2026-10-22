@@ -85,8 +85,9 @@ python scripts/fixtures.py run complex_c_project     # bootstrap, analyze, valid
 ```
 
 `run` performs the same steps a user would (`init`, `doctor`, `scan`, `build
-discover`, `analyze`) against a disposable copy of the fixture and validates
-the results against `expected_findings.json`. Committed fixture sources are
+discover`, `analyze`, `report`) against a disposable copy of the fixture and
+validates the repository, build, and analysis reports against
+`expected_findings.json`; it fails if any mandatory finding goes unchecked. Committed fixture sources are
 never modified. New fixtures are added by dropping a `fixture.py` into their
 directory; see `tests/fixtures/README.md` for the contract.
 
@@ -190,7 +191,12 @@ cintel --repository /tmp/cintel-demo report
 
 ## Symbol and relationship queries
 
-After `analyze`, the stored index answers read-only queries. Ambiguous
+After `analyze`, the stored index answers read-only queries. Queries and
+reports read the scope of the latest `analyze` run: with `--build-config NAME`,
+that configuration's compilation units plus file-scoped results for C files
+outside the build; without it, file-scoped results only. Results from earlier
+runs under other configurations stay stored but are not mixed in, so rerun
+`analyze` with the configuration you want to inspect. Ambiguous
 function names (several definitions) list their candidates and exit with
 status 1; rerun with `--file <repository-relative-path>` to choose one.
 Unknown names report that the index has no such definition and point at
