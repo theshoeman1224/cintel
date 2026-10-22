@@ -169,10 +169,19 @@ copy from 2026-10-10 is there now. It is gitignored, but this conflicts with
 the README ("Copy it before running the full flow so the committed fixture
 stays untouched") and with the AGENTS.md invariant.
 
+Status 2026-10-21: fixed in Phase 2. Choosing the fixture analyzes a
+disposable copy at `.fixture-output/demo/complex_c_project`, created by
+`prepare_demo_copy` without `.code-intelligence/`, `build/`, or generated
+outputs, then filled by `make generate CONFIG=linux` when Make exists. The
+copy is reused on re-runs.
+
 **S3 (Medium). The import path hard-codes the build configuration
 `debug`.** Option 2 never asks for a configuration name, Makefile, or target
 (lines 157 and 244). Importing the Linux dry-run stores it as `debug`, and
 the suggested next steps say `--build-config "debug"`.
+
+Status 2026-10-21: fixed in Phase 2. Option 2 prompts for the configuration
+name, Makefile, and target.
 
 **S4 (Medium). The import menu says "saved dry-run/build log"** (line 162),
 and the prompt offers all six input types. Only `make_dry_run` produces
@@ -180,9 +189,18 @@ compilation units. A build log validates, is then ignored, and analysis
 falls back to file-scoped. The roadmap documents that only dry-runs are
 consumed; `start.sh` and the README's description of it do not.
 
+Status 2026-10-21: fixed in Phase 2. The menu offers an imported `make -n`
+transcript, and the prompt says only `make_dry_run` enables build-aware
+analysis. Other types are imported with a note, and the script no longer
+attempts build-aware analysis for them.
+
 **S5 (Low). Misleading messages.** "Note: ... see REQUIRED_INPUTS.md below"
 does not print the file. "Using interpreter: python3.12" appears while the
 script reuses a Python 3.14 venv.
+
+Status 2026-10-21: fixed in Phase 2. The note prints the full
+`REQUIRED_INPUTS.md` path. The script reports the interpreter it found and,
+separately, the virtualenv's interpreter.
 
 ### Fixtures and tests against their docs
 
@@ -305,6 +323,12 @@ the new `configuration` field), roadmap "Symbol, call-graph" section, and the
 brief's build-configuration section (mark it done).
 
 ### Phase 2: `start.sh` (script)
+
+Status: complete (2026-10-21). S1 landed in PR #7 as a re-prompting
+`resolve_repository` helper instead of the `exit 1` sketched below. S2–S5
+landed in this phase. `tests/unit/test_start_script.py` covers the demo-copy
+helper. Manual runs of the demo default (live Make and imported dry-run)
+left the committed fixture's paths and mtimes unchanged.
 
 1. **S1.** Replace line 122 with a guarded
    `if ! REPO="$(cd "$REPO" 2>/dev/null && pwd)"; then ...; exit 1; fi`.

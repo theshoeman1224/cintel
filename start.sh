@@ -55,6 +55,44 @@ resolve_repository() {
     (cd "$path" && pwd)
 }
 
+prepare_demo_copy() {
+    # prepare_demo_copy FIXTURE DEST -> make DEST a disposable copy of the
+    # demo fixture, so the committed fixture is never written to. An
+    # existing copy is reused with its workspace and analysis state.
+    local fixture="$1" dest="$2"
+    if [[ -d "$dest" ]]; then
+        echo "Reusing demo copy at $dest"
+        return 0
+    fi
+    "${PYTHON:-python3}" - "$fixture" "$dest" <<'EOF'
+import shutil
+import sys
+from pathlib import Path
+
+source, destination = Path(sys.argv[1]), Path(sys.argv[2])
+destination.parent.mkdir(parents=True, exist_ok=True)
+shutil.copytree(
+    source,
+    destination,
+    ignore=shutil.ignore_patterns(".code-intelligence", "build", "__pycache__"),
+)
+# Generated outputs are rebuilt with `make generate`, never copied.
+generated = destination / "generated"
+if generated.is_dir():
+    for item in generated.iterdir():
+        if item.name != ".gitkeep":
+            item.unlink()
+EOF
+    echo "Copied the demo fixture to $dest"
+    if command -v make >/dev/null 2>&1; then
+        if make -s -C "$dest" generate CONFIG=linux >/dev/null 2>&1; then
+            echo "Generated the demo's build inputs (make generate CONFIG=linux)."
+        else
+            echo "warning: make generate failed; analysis will report missing generated inputs." >&2
+        fi
+    fi
+}
+
 # Sourcing the script (as the tests do) loads the helpers above without
 # running the setup below.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
@@ -80,7 +118,7 @@ if [[ -z "$PYTHON" ]]; then
     exit 1
 fi
 
-echo "Using interpreter: $PYTHON ($("$PYTHON" --version))"
+echo "Found interpreter: $PYTHON ($("$PYTHON" --version))"
 
 # ---------------------------------------------------------------------------
 # 2. Create or reuse the virtual environment
@@ -101,6 +139,8 @@ fi
 # shellcheck disable=SC1091
 . "$VENV_DIR/bin/activate"
 PYTHON="$VENV_DIR/bin/python"
+# A reused virtualenv keeps the Python it was created with.
+echo "Virtualenv interpreter: $("$PYTHON" --version)"
 
 # ---------------------------------------------------------------------------
 # 3. Install the project (skipped automatically when already current)
@@ -130,17 +170,26 @@ fi
 # ---------------------------------------------------------------------------
 section "Guided first analysis"
 
+DEMO_FIXTURE="$PROJECT_ROOT/tests/fixtures/complex_c_project"
+DEMO_COPY="$PROJECT_ROOT/.fixture-output/demo/complex_c_project"
+
 echo "Choose a legacy C repository to analyze."
 echo "A demo fixture is available at:"
-echo "  $PROJECT_ROOT/tests/fixtures/complex_c_project"
+echo "  $DEMO_FIXTURE"
+echo "Choosing it analyzes a disposable copy under .fixture-output/demo/."
 echo
 while true; do
-    prompt_value "Repository path" "$PROJECT_ROOT/tests/fixtures/complex_c_project"
+    prompt_value "Repository path" "$DEMO_FIXTURE"
     if REPO="$(resolve_repository "$REPLY")"; then
         break
     fi
     echo "Enter an existing directory, or press Ctrl-C to quit."
 done
+
+if [[ "$REPO" == "$DEMO_FIXTURE" ]]; then
+    prepare_demo_copy "$DEMO_FIXTURE" "$DEMO_COPY"
+    REPO="$DEMO_COPY"
+fi
 
 echo
 echo "Plan:"
@@ -167,7 +216,8 @@ echo "$setup_output"
 if [[ "$SETUP_BLOCKED" == true ]] \
     || { [[ "$setup_output" != "" ]] && grep -q "^\[" <<<"$setup_output"; }; then
     echo
-    echo "Note: setup reports missing build evidence; see REQUIRED_INPUTS.md below."
+    echo "Note: setup reports missing build evidence; see"
+    echo "  $REPO/.code-intelligence/REQUIRED_INPUTS.md"
 fi
 
 BUILD_CONFIG="debug"
@@ -175,7 +225,7 @@ BUILD_CONFIG="debug"
 echo
 echo "Build evidence for analysis:"
 echo "  1) Live Make dry-run   - run 'make -n' inside the repository now"
-echo "  2) Imported input file - validate a saved dry-run/build log and resume"
+echo "  2) Imported dry-run    - validate saved 'make -n' output and resume"
 echo "  3) Skip                - analyze file-scoped without build evidence"
 echo
 prompt_value "Choose evidence source (1/2/3)" "3"
@@ -254,12 +304,32 @@ case "$EVIDENCE" in
         fi
         echo "Input types: make_dry_run, build_log, file_list,"
         echo "             dependency_file, preprocessed_source, macro_listing"
+        echo "Only make_dry_run evidence enables build-aware analysis today; the"
+        echo "other types are validated and kept for future compiler enrichment."
         prompt_value "Input type" "make_dry_run"
         INPUT_TYPE="$REPLY"
+        prompt_value "Build configuration name" "$BUILD_CONFIG"
+        BUILD_CONFIG="$REPLY"
+        prompt_value "Makefile the evidence came from (relative to repository)" "Makefile"
+        MAKEFILE="$REPLY"
+        prompt_value "Make target the evidence came from (blank for the default goal)" ""
+        TARGET="$REPLY"
         echo
-        MAKE_ARGS=(--build-config "$BUILD_CONFIG" --input-file "$INPUT_FILE" --input-type "$INPUT_TYPE")
+        MAKE_ARGS=(
+            --build-config "$BUILD_CONFIG" --makefile "$MAKEFILE"
+            --input-file "$INPUT_FILE" --input-type "$INPUT_TYPE"
+        )
+        if [[ -n "$TARGET" ]]; then
+            MAKE_ARGS+=(--target "$TARGET")
+        fi
+        if [[ "$INPUT_TYPE" != "make_dry_run" ]]; then
+            echo "Note: $INPUT_TYPE evidence is recorded but not used by analysis yet;"
+            echo "analysis will be file-scoped."
+        fi
         if "$PYTHON" -m cintel --repository "$REPO" "${MAKE_ARGS[@]}" resume; then
-            ANALYZE_WITH_BUILD=true
+            if [[ "$INPUT_TYPE" == "make_dry_run" ]]; then
+                ANALYZE_WITH_BUILD=true
+            fi
         else
             echo
             echo "Evidence import failed; continuing with file-scoped analysis."

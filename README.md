@@ -23,15 +23,29 @@ Python 3.11 or newer is required. No runtime dependencies are required.
 ```
 
 The script sets up the `.venv` virtual environment, installs the project,
-optionally runs the test suite, then walks through a first analysis: it asks
-for a repository path (the built-in fixture works as a demo), chooses between
-a live Make dry-run, an imported evidence file, or file-scoped analysis, and
-runs `init`, `doctor`, `scan`, `setup`, `build discover`/`resume`, `analyze`, and
-`report`. After analysis it prints a findings summary pointing at
+optionally runs the test suite, then walks through a first analysis. It asks
+for a repository path and offers three kinds of build evidence:
+
+- a live Make dry-run (Makefile, target, build configuration name, and Make
+  variables are prompted);
+- an imported saved `make -n` transcript (input type, build configuration
+  name, Makefile, and target are prompted). Only `make_dry_run` evidence
+  enables build-aware analysis today; the other input types are validated and
+  kept, and analysis falls back to file-scoped;
+- none, for file-scoped analysis.
+
+It then runs `init`, `doctor`, `scan`, `setup`, `build discover`/`resume`,
+`analyze`, and `report`, and prints a findings summary pointing at
 `REQUIRED_INPUTS.md` and the generated report families
 (`reports/diagnostics_index.md`, `reports/include_index.md`,
-`reports/call_graph.md`). It is safe to re-run; existing virtualenvs,
-workspaces, and analysis state are reused.
+`reports/call_graph.md`).
+
+Accepting the default path (the built-in fixture) analyzes a disposable copy
+at `.fixture-output/demo/complex_c_project`, with its generated inputs built
+by `make generate` when Make is available, so the committed fixture is never
+written to. An invalid path is rejected and the prompt repeats. The script is
+safe to re-run; existing virtualenvs, the demo copy, workspaces, and analysis
+state are reused.
 
 ### Manual installation
 
