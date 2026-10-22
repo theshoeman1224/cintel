@@ -126,12 +126,37 @@ class DoctorService:
                 )
             )
 
+        if config.ai_enabled:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCode.CONFIGURATION_SETTING_IGNORED,
+                    severity=DiagnosticSeverity.WARNING,
+                    message=(
+                        "[ai] enabled = true has no effect: AI integration is "
+                        "not implemented, and no source is sent anywhere."
+                    ),
+                    missing_capability="ai_generation",
+                    recoverability=Recoverability.USER_ACTION,
+                    suggested_actions=(
+                        "Set `enabled = false` in the [ai] section of config.toml.",
+                    ),
+                )
+            )
+
         capabilities = _doctor_capabilities(
             writable=writable, make_available=make_available, gcc_available=gcc_available
         )
 
         if not actions:
-            actions.append("Run `cintel init <repository>` to create the local workspace.")
+            if (Path(config.output_directory) / "config.toml").is_file():
+                actions.append(
+                    "Run `cintel scan`, then `cintel build discover` (or "
+                    "`cintel setup` when Make cannot run here)."
+                )
+            else:
+                actions.append(
+                    "Run `cintel init <repository>` to create the local workspace."
+                )
 
         return DoctorReport(
             repository_root=str(root),
@@ -238,9 +263,17 @@ def _doctor_capabilities(
             reason="GNU Make is available." if make_available else "GNU Make is unavailable.",
         ),
         AnalysisCapability(
+            # Enrichment (dependency files, preprocessing, macro dumps) is
+            # planned for Phase 7; a GCC on PATH does not make it available.
             name="gcc_enrichment",
-            status=CapabilityStatus.AVAILABLE if gcc_available else CapabilityStatus.UNAVAILABLE,
-            reason="A GCC executable is available." if gcc_available else "No GCC executable was found.",
+            status=CapabilityStatus.UNAVAILABLE,
+            reason=(
+                "A GCC executable is available, but compiler enrichment is "
+                "not implemented yet."
+                if gcc_available
+                else "No GCC executable was found, and compiler enrichment is "
+                "not implemented yet."
+            ),
         ),
         AnalysisCapability(
             name="offline_deterministic_analysis",

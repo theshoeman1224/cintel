@@ -23,15 +23,29 @@ Python 3.11 or newer is required. No runtime dependencies are required.
 ```
 
 The script sets up the `.venv` virtual environment, installs the project,
-optionally runs the test suite, then walks through a first analysis: it asks
-for a repository path (the built-in fixture works as a demo), chooses between
-a live Make dry-run, an imported evidence file, or file-scoped analysis, and
-runs `init`, `doctor`, `scan`, `setup`, `build discover`/`resume`, `analyze`, and
-`report`. After analysis it prints a findings summary pointing at
+optionally runs the test suite, then walks through a first analysis. It asks
+for a repository path and offers three kinds of build evidence:
+
+- a live Make dry-run (Makefile, target, build configuration name, and Make
+  variables are prompted);
+- an imported saved `make -n` transcript (input type, build configuration
+  name, Makefile, and target are prompted). Only `make_dry_run` evidence
+  enables build-aware analysis today; the other input types are validated and
+  kept, and analysis falls back to file-scoped;
+- none, for file-scoped analysis.
+
+It then runs `init`, `doctor`, `scan`, `setup`, `build discover`/`resume`,
+`analyze`, and `report`, and prints a findings summary pointing at
 `REQUIRED_INPUTS.md` and the generated report families
 (`reports/diagnostics_index.md`, `reports/include_index.md`,
-`reports/call_graph.md`). It is safe to re-run; existing virtualenvs,
-workspaces, and analysis state are reused.
+`reports/call_graph.md`).
+
+Accepting the default path (the built-in fixture) analyzes a disposable copy
+at `.fixture-output/demo/complex_c_project`, with its generated inputs built
+by `make generate` when Make is available, so the committed fixture is never
+written to. An invalid path is rejected and the prompt repeats. The script is
+safe to re-run; existing virtualenvs, the demo copy, workspaces, and analysis
+state are reused.
 
 ### Manual installation
 
@@ -79,7 +93,7 @@ documented `cintel` CLI flow):
 ```bash
 python scripts/fixtures.py list                      # fixtures, requirements, operations
 python scripts/fixtures.py setup complex_c_project   # build generated fixture artifacts
-python scripts/fixtures.py verify all                # fixture self-checks
+python scripts/fixtures.py verify all                # fixture self-checks (on a temporary copy)
 python scripts/fixtures.py clean all                 # remove generated artifacts
 python scripts/fixtures.py run complex_c_project     # bootstrap, analyze, validate
 ```
@@ -133,7 +147,11 @@ cintel --repository /path/to/legacy-c-repository report
 ```
 
 Global options such as `--repository`, `--config`, and `--build-config` must
-appear before the subcommand. Generated state is kept under
+appear before the subcommand. `--output-directory` moves the workspace
+somewhere other than `<repository>/.code-intelligence/`.
+`--make-working-directory` sets the directory Make runs in (default: the
+repository root), and `--env NAME=value` (repeatable) adds an environment
+override for the Make run. Generated state is kept under
 `.code-intelligence/`. `init` will not overwrite a configuration whose
 contents differ from the configuration it would create.
 
@@ -161,25 +179,42 @@ contents differ from the configuration it would create.
 ## Exit codes and output
 
 - `0`: success.
-- `1`: the query ran but matched nothing, or a function name was ambiguous or absent.
+- `1`: the query ran but matched nothing, a function name was ambiguous or
+  absent, or a read-only command found no workspace.
 - `2`: an error, including configuration, storage, and validation failures.
 
 Every command accepts `--json`. Errors render as a structured
 `{"error": {...}}` object on standard output and keep the same exit codes.
-Text output includes `Action:` lines with next steps when a diagnostic
-carries them.
+Text output prints each distinct diagnostic once, with an occurrence count
+when it repeats, the related paths (up to five), and `Action:` lines with
+next steps when the diagnostic carries them.
+
+The read-only commands (`symbols`, `show function`, `callers`, `callees`,
+`context function`, `build units`, and `build show`) never create a
+workspace. Without one they print the `cintel init` hint and exit 1; with
+`--json` the hint is a `{"error": {"type": "WorkspaceNotFound", ...}}`
+object.
+
+`--verbose` prints, on standard error, which configuration was used
+(`--config`, the repository's `.code-intelligence/config.toml`, or built-in
+defaults) and how long the command took. Setting `enabled = true` under
+`[ai]` has no effect: AI integration is not implemented. Every command warns
+about it on standard error, and `doctor` reports `CI-CONF-001`.
 
 ## Example repository
 
 `tests/fixtures/complex_c_project` is a representative Make-based C
 repository with multiple build configurations, recursive Make, generated
 inputs, wrapper commands, plugins, and saved dry-run evidence. It doubles as
-the demo in `./start.sh` and as the tool's own end-to-end test subject. Copy
-it before running the full flow so the committed fixture stays untouched:
+the demo in `./start.sh` and as the tool's own end-to-end test subject.
+`./start.sh` copies it for you; to run the flow by hand, copy it first so the
+committed fixture stays untouched, and build its generated inputs in the copy
+(without that step, build discovery warns about the missing generated files):
 
 ```bash
 cp -r tests/fixtures/complex_c_project /tmp/cintel-demo
 rm -rf /tmp/cintel-demo/.code-intelligence
+make -s -C /tmp/cintel-demo generate CONFIG=linux
 cintel init /tmp/cintel-demo
 cintel --repository /tmp/cintel-demo doctor
 cintel --repository /tmp/cintel-demo scan
@@ -252,10 +287,14 @@ repository inventory stays at its conventional locations):
   compiler, define, and include-path counts;
 - `reports/function_index.{md,json}` — every analyzed function with
   definition/declaration state, linkage, and location;
+- `reports/symbol_index.{md,json}` — every stored function, variable,
+  type, and macro with definition state, linkage, and location;
 - `reports/call_graph.{md,json}` — deduplicated direct-call edges with
   call-site lines, callee definitions, and explicit unresolved edges;
 - `reports/include_index.{md,json}` — include directives with resolved
   targets;
+- `reports/global_usage.{md,json}` — each function's references to
+  global variables, with where the function and the variable live;
 - `reports/diagnostics_index.{md,json}` and
   `reports/capability_index.{md,json}` — every diagnostic and capability
   record with provenance classification.
@@ -409,8 +448,11 @@ The domain imports no process, SQLite, Make, GCC, CLI-library, or AI-SDK code.
 To add a build-system adapter, implement `BuildDiscoveryProvider` and construct
 it in the composition root. Build-specific parsing stays in that adapter.
 
-To add a compiler adapter, implement `CompilerProvider`; capability probing and
-compiler-specific flags must not leak into domain or application services.
+To add a compiler adapter, implement `CompilerCommandParser` (turns a compiler
+command into a normalized invocation) and, for identity probing,
+`CompilerMetadataProvider`. Capability probing and compiler-specific flags must
+not leak into domain or application services. `CompilerProvider` is a reserved
+port for future GCC enrichment; nothing implements or consumes it yet.
 
 To add a parser adapter, implement `SourceParser`. It must report confidence and
 diagnostics rather than claiming unsupported semantic certainty.
@@ -418,8 +460,9 @@ diagnostics rather than claiming unsupported semantic certainty.
 To add a report format, implement `ReportRenderer` and keep serialization or
 template details in its adapter.
 
-Future AI integration will implement `AIProvider`. It is optional by design and
-must not become a dependency of deterministic indexing or context selection.
+`AIProvider` is likewise reserved: only the disabled provider implements it,
+and no service calls it. Future AI integration is optional by design and must
+not become a dependency of deterministic indexing or context selection.
 
 ## Configuration
 

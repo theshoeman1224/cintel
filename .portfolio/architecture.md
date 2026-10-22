@@ -29,8 +29,8 @@ Repository-local .code-intelligence workspace
   compilation units, symbols, relationships, capabilities, artifacts, workflow
   state, and diagnostics.
 - `application` coordinates initialization, environment checks, repository
-  scanning, build discovery, and guided recovery without embedding adapter
-  details.
+  scanning, build discovery, guided recovery, source analysis, symbol queries,
+  function context packages, and reports without embedding adapter details.
 - `ports` defines contracts for command execution, build discovery, compiler
   handling, source parsing, storage, rendering, artifacts, guidance, and
   optional AI integration.
@@ -59,19 +59,18 @@ than failing the whole workflow. Imported artifacts are copied, hashed,
 validated, associated with a build configuration, checked for staleness, and
 used to resume persisted workflow stages.
 
-Reports, queries, and context packages read persisted state only. Report
-families render in Markdown and JSON through per-family modules; symbol and
-call-graph queries resolve names against stored definitions; context packages
-fill sections in a fixed priority order under a character budget.
-
 Source analysis masks comments and literals while preserving byte offsets,
 then conservatively extracts includes, macros, declarations, definitions,
 named types, typedefs, and file-scope variables. The analysis service reuses
 unchanged results by source hash, compilation-unit fingerprint, and parser
 version, resolves direct calls and includes deterministically, and persists
-symbols and relationships in SQLite. The CLI exposes the stored index through
-symbol and call-graph queries, budgeted function context packages, and
-deterministic Markdown/JSON report families.
+symbols and relationships in SQLite.
+
+Reports, queries, and context packages then read that persisted state,
+limited to the latest analysis run's build configuration. Report families
+render in Markdown and JSON through per-family modules; symbol and call-graph
+queries resolve names against stored definitions; context packages fill
+sections in a fixed priority order under a character budget.
 
 ## Design Decisions
 

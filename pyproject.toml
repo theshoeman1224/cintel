@@ -29,7 +29,10 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.coverage.run]
-source_pkgs = ["cintel"]
+# Matches sonar.sources: the package plus the helper scripts, which the
+# suite exercises (install.py, fixtures.py).
+source = ["src/cintel", "scripts"]
+relative_files = true
 data_file = ".coverage"
 
 [tool.coverage.report]

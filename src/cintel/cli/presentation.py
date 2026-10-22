@@ -98,8 +98,7 @@ def render_scan(result: ScanWorkflowResult, as_json: bool = False) -> str:
         lines.append(f"Markdown report: {result.markdown_report}")
     if result.json_report:
         lines.append(f"JSON report: {result.json_report}")
-    for diagnostic in scan.diagnostics:
-        lines.extend(_diagnostic_lines(diagnostic))
+    lines.extend(_diagnostic_block(scan.diagnostics))
     return "\n".join(lines)
 
 
@@ -127,18 +126,37 @@ def render_build_discovery(
         f"Build fingerprint: {result.build_fingerprint}",
         f"Source: {'cache' if result.from_cache else 'Make dry-run'}",
     ]
-    for diagnostic in result.diagnostics:
-        lines.extend(_diagnostic_lines(diagnostic))
+    lines.extend(_diagnostic_block(result.diagnostics))
     return "\n".join(lines)
 
 
 def render_compilation_units(
-    units: tuple[CompilationUnit, ...], as_json: bool = False
+    units: tuple[CompilationUnit, ...],
+    as_json: bool = False,
+    *,
+    requested_configuration: str | None = None,
+    discovered_configurations: tuple[str, ...] = (),
 ) -> str:
-    """Render compilation units as text or JSON."""
+    """Render compilation units as text or JSON.
+
+    An empty result names the requested configuration and, when other
+    configurations were discovered, lists them so the user can pick one.
+    """
     if as_json:
         return _json(units)
     if not units:
+        others = tuple(
+            name
+            for name in discovered_configurations
+            if name != requested_configuration
+        )
+        if requested_configuration is not None and others:
+            return (
+                "No compilation units found for build configuration "
+                f"`{requested_configuration}`. Discovered configurations: "
+                + ", ".join(others)
+                + ". Pass --build-config NAME before the subcommand."
+            )
         return (
             "No compilation units found. Run `cintel build discover` first "
             "if build evidence has not been imported."
@@ -188,8 +206,7 @@ def render_analysis(result: AnalysisRunSummary, as_json: bool = False) -> str:
         "Directly recursive: "
         + (", ".join(result.recursive_functions) if result.recursive_functions else "none"),
     ]
-    for diagnostic in result.diagnostics:
-        lines.extend(_diagnostic_lines(diagnostic))
+    lines.extend(_diagnostic_block(result.diagnostics))
     return "\n".join(lines)
 
 
@@ -348,8 +365,7 @@ def render_report_run(result: ReportRunResult, as_json: bool = False) -> str:
     ]
     for report in result.reports:
         lines.append(f"  {report.report_name} [{report.format}]: {report.path}")
-    for diagnostic in result.diagnostics:
-        lines.extend(_diagnostic_lines(diagnostic))
+    lines.extend(_diagnostic_block(result.diagnostics))
     if not result.analysis_present:
         lines.append(
             "No source analysis found yet; run `cintel analyze` before relying "
@@ -358,11 +374,47 @@ def render_report_run(result: ReportRunResult, as_json: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _diagnostic_lines(diagnostic: Diagnostic) -> list[str]:
-    lines = [
-        f"[{diagnostic.code}] {diagnostic.severity.value}: {diagnostic.message}"
-    ]
-    lines.extend(f"  Action: {action}" for action in diagnostic.suggested_actions)
+_MAX_LISTED_PATHS = 5
+
+
+def _diagnostic_block(diagnostics) -> list[str]:
+    """Render diagnostics once per distinct message, with their paths.
+
+    Build discovery can report the same problem for every compile command;
+    repeats collapse into one entry with an occurrence count, in the order
+    each message first appeared.
+    """
+    groups: dict[tuple, list[Diagnostic]] = {}
+    for diagnostic in diagnostics:
+        key = (
+            diagnostic.code,
+            diagnostic.severity,
+            diagnostic.message,
+            diagnostic.suggested_actions,
+        )
+        groups.setdefault(key, []).append(diagnostic)
+    lines: list[str] = []
+    for group in groups.values():
+        lines.extend(_diagnostic_lines(group))
+    return lines
+
+
+def _diagnostic_lines(group: list[Diagnostic]) -> list[str]:
+    first = group[0]
+    heading = f"[{first.code}] {first.severity.value}: {first.message}"
+    if len(group) > 1:
+        heading += f" ({len(group)} occurrences)"
+    lines = [heading]
+    paths = list(
+        dict.fromkeys(path for item in group for path in item.related_paths)
+    )
+    if paths:
+        listed = ", ".join(paths[:_MAX_LISTED_PATHS])
+        hidden = len(paths) - _MAX_LISTED_PATHS
+        lines.append(
+            f"  Paths: {listed}" + (f" (+{hidden} more)" if hidden > 0 else "")
+        )
+    lines.extend(f"  Action: {action}" for action in first.suggested_actions)
     return lines
 
 

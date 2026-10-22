@@ -89,21 +89,36 @@ progress detail to standard error" (`cli/main.py:91`). No code reads
 unconditional. `docs/CLI_REDESIGN_BRIEF.md` also plans more `--verbose`
 logging.
 
+Status 2026-10-21: fixed in Phase 4. `--verbose` prints the configuration
+source and the command's run time to standard error.
+
 **C3 (Medium). Interactive `build discover` prints the preview twice.** On a
 TTY, the evaluation command and the `$(shell ...)` warning print twice,
 because the unconditional block (`cli/main.py:378-388`) is followed by a
 duplicate `if interactive:` block (`cli/main.py:389-399`). Reproduced under
 `script`. The README promises one preview followed by a confirmation.
 
+Status 2026-10-21: fixed in Phase 1. The duplicate block is gone, and
+`test_interactive_build_discover_previews_once` checks that the preview
+prints exactly once.
+
 **C4 (Medium). `doctor` always recommends `cintel init`.** When no other
 action applies, `application/doctor.py:133-134` appends "Run
 `cintel init <repository>`", even right after `init` succeeded. `start.sh`
 prints this on every run.
 
+Status 2026-10-21: fixed in Phase 1. `doctor` recommends `init` only when
+`config.toml` is missing, and otherwise points at `scan` and
+`build discover` or `setup`.
+
 **C5 (Medium). `doctor` reports `gcc_enrichment: available`.** The README
 and roadmap both say GCC enrichment is not implemented (Phase 7).
 `application/doctor.py:240-244` marks the capability available whenever a
 GCC executable exists.
+
+Status 2026-10-21: fixed in Phase 1. `gcc_enrichment` is always
+`unavailable`, and the reason says whether GCC was found. GCC still appears
+under `Tools:`.
 
 **C6 (Medium). The `--build-config` default silently changes results.** The
 help text documents the `default` default, but after
@@ -117,9 +132,18 @@ help text documents the `default` default, but after
 The 2026-10-10 audit lists this as finding 8 and marks it fixed. Only the
 help text changed.
 
+Status 2026-10-21: fixed in Phase 1. `build units` and `build show` name the
+requested configuration and list the discovered ones. `analyze` adds an
+info-level `CI-ANLZ-001` diagnostic with the same list instead of falling
+back silently. The `default` default is unchanged.
+
 **C7 (Low). Read-only commands create a workspace.** AGENTS.md says queries
 "read persisted state only". `symbols` on a fresh directory creates
 `.code-intelligence/index.sqlite`.
+
+Status 2026-10-21: fixed in Phase 4. Queries, `context`, `build units`, and
+`build show` check for the database first. Without it they exit 1 with an
+init hint (`WorkspaceNotFound` under `--json`) and create nothing.
 
 **C8 (Low). `report` is not read-only.** AGENTS.md groups `report` with the
 read-only queries. `ReportService.generate_all` re-scans the repository and
@@ -127,10 +151,17 @@ rewrites the inventory (`application/reports.py:113`). The README's
 "regenerates every report family from persisted state" is accurate for the
 families under `reports/`, but not for the inventory.
 
+Status 2026-10-21: documented. AGENTS.md has said since PR #7 that `report`
+re-scans, and since Phase 4 that it creates the workspace if needed. The
+behavior is intentional and was not changed.
+
 **C9 (Low). `[ai] enabled = true` is ignored without a warning.** The loader
 reads the value (`configuration/loader.py:49`) and nothing checks it. The
 README says future providers must require explicit approval. A user who sets
 the flag gets no signal that it does nothing.
+
+Status 2026-10-21: fixed in Phase 4. Every command warns on standard error,
+and `doctor` reports the new `CI-CONF-001` warning diagnostic.
 
 ### `start.sh` against README and IMPROVEMENT_PLAN
 
@@ -152,10 +183,19 @@ copy from 2026-10-10 is there now. It is gitignored, but this conflicts with
 the README ("Copy it before running the full flow so the committed fixture
 stays untouched") and with the AGENTS.md invariant.
 
+Status 2026-10-21: fixed in Phase 2. Choosing the fixture analyzes a
+disposable copy at `.fixture-output/demo/complex_c_project`, created by
+`prepare_demo_copy` without `.code-intelligence/`, `build/`, or generated
+outputs, then filled by `make generate CONFIG=linux` when Make exists. The
+copy is reused on re-runs.
+
 **S3 (Medium). The import path hard-codes the build configuration
 `debug`.** Option 2 never asks for a configuration name, Makefile, or target
 (lines 157 and 244). Importing the Linux dry-run stores it as `debug`, and
 the suggested next steps say `--build-config "debug"`.
+
+Status 2026-10-21: fixed in Phase 2. Option 2 prompts for the configuration
+name, Makefile, and target.
 
 **S4 (Medium). The import menu says "saved dry-run/build log"** (line 162),
 and the prompt offers all six input types. Only `make_dry_run` produces
@@ -163,9 +203,18 @@ compilation units. A build log validates, is then ignored, and analysis
 falls back to file-scoped. The roadmap documents that only dry-runs are
 consumed; `start.sh` and the README's description of it do not.
 
+Status 2026-10-21: fixed in Phase 2. The menu offers an imported `make -n`
+transcript, and the prompt says only `make_dry_run` enables build-aware
+analysis. Other types are imported with a note, and the script no longer
+attempts build-aware analysis for them.
+
 **S5 (Low). Misleading messages.** "Note: ... see REQUIRED_INPUTS.md below"
 does not print the file. "Using interpreter: python3.12" appears while the
 script reuses a Python 3.14 venv.
+
+Status 2026-10-21: fixed in Phase 2. The note prints the full
+`REQUIRED_INPUTS.md` path. The script reports the interpreter it found and,
+separately, the virtualenv's interpreter.
 
 ### Fixtures and tests against their docs
 
@@ -201,8 +250,15 @@ committed fixture path and its modification time are unchanged afterwards.
 The driver's `verify` operation still runs in place by design, and
 `tests/fixtures/README.md` now says so.
 
+Status 2026-10-21, Phase 3: the driver's `verify` now runs on an exact
+temporary copy too (`scripts/fixtures.py`, `_execute`). No fixture file
+changed.
+
 **F3 (Low). Python 3.11 is never tested.** `requires-python = ">=3.11"`,
 and the README says to use `python3.11`. Both CI workflows run only 3.12.
+
+Status 2026-10-21: fixed in Phase 3. `quality.yml` runs ruff, mypy, and the
+suite on a 3.11 and 3.12 matrix.
 
 ### Documentation that disagrees with itself or is stale
 
@@ -247,6 +303,13 @@ The ground rules match the earlier plans:
 
 ### Phase 1: correctness bugs (code)
 
+Status: complete (2026-10-21). C1 landed earlier in PR #7; C3–C6 landed in
+this phase, each with a test that failed first. Two parts of the original C1
+plan were dropped: queries follow the latest `analyze` scope and take no
+`--build-config` override (rerunning `analyze` is cheap thanks to reuse),
+and report entries carry no `configuration` field, because a report now
+covers exactly one scope.
+
 1. **C1, scoped analysis results.** Give every query and report one analysis
    scope instead of a union.
    - Persist which build configuration the latest `analyze` used. The
@@ -282,6 +345,12 @@ brief's build-configuration section (mark it done).
 
 ### Phase 2: `start.sh` (script)
 
+Status: complete (2026-10-21). S1 landed in PR #7 as a re-prompting
+`resolve_repository` helper instead of the `exit 1` sketched below. S2–S5
+landed in this phase. `tests/unit/test_start_script.py` covers the demo-copy
+helper. Manual runs of the demo default (live Make and imported dry-run)
+left the committed fixture's paths and mtimes unchanged.
+
 1. **S1.** Replace line 122 with a guarded
    `if ! REPO="$(cd "$REPO" 2>/dev/null && pwd)"; then ...; exit 1; fi`.
    Add a shell test, or extend `test_install_script.py`, that runs the
@@ -304,6 +373,15 @@ Docs: README "Quickest start" (copy behavior, configuration prompt, accepted
 input types). Reopen and then close audit finding 11 in `CODEBASE_AUDIT.md`.
 
 ### Phase 3: fixture and test alignment
+
+Status: complete (2026-10-21). F1 and F2 landed in PR #7. F2 used an
+mtime snapshot of the fixture instead of `git status`, because rewrites with
+identical content leave git clean. F1 fails on any "not exported" finding
+rather than on a numeric floor. In this phase, the driver's `verify` moved
+onto a temporary copy, so no further `fixture.py` edit was needed. The CI
+matrix landed, and the generated `build/`, `generated/`, and stale
+`.code-intelligence/` were cleaned out of the local fixture. The suite no
+longer recreates them.
 
 1. **F2 (no exception needed).** Change
    `test_fixture_builds_and_current_cintel_subset_validates` to copy the
@@ -335,6 +413,14 @@ fixtures", and the fixture tally in the roadmap.
 
 ### Phase 4: small CLI contract fixes
 
+Status: complete (2026-10-21). C2, C7, and C9 landed with tests that failed
+first, and so did the optional diagnostic grouping: 19 identical
+`CI-BUILD-005` lines now print once with a count and the missing file's
+path. `--verbose` was kept and implemented rather than removed. Two
+SonarCloud follow-ups came with it: coverage now measures `scripts/` (Sonar
+already listed it as source, so its new lines counted as uncovered), and
+one S8495 smell in the new analysis helper was fixed.
+
 1. **C2.** Make `--verbose` do what the help says: print to stderr which
    config source won (flag, conventional file, or defaults), plus stage
    timings for `build discover`, `analyze`, and `report`. If you'd rather
@@ -354,6 +440,20 @@ Docs: README "Exit codes and output" and the help text for `--verbose`,
 AGENTS.md command flow (C7, C8).
 
 ### Phase 5: documentation sync (docs only)
+
+Status: complete (2026-10-21). D1–D16 are fixed: the README report list and
+adapter seams, AGENTS.md command flow and doc map, the roadmap header,
+counts (318 tests: 256 unit, 62 integration; fixture passed=29), architecture
+table, and phase attribution, the IMPROVEMENT_PLAN counts and commit note,
+the CLI brief, `.portfolio/`, and the REFACTOR_PLAN historical note. D14 was
+resolved by Phase 2's README rewrite plus a `make generate` step in the manual
+demo. D15 was resolved by Phase 3, so the suite no longer produces artifacts
+in the fixture. `tests/unit/test_documentation_drift.py` adds the drift
+guards: the README report list matches `_REPORT_FAMILIES`, every CLI flag and
+command appears in the README, every diagnostic family appears in the
+roadmap, and AGENTS.md maps every file in `docs/`. The README now documents
+`--output-directory`, `--make-working-directory`, and `--env`, which the flag
+guard found undocumented.
 
 Fix D1–D16 in one pass, after Phases 1–4 so the numbers are final:
 

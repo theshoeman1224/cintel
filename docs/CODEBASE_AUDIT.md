@@ -278,6 +278,12 @@ manager.
 Status update 2026-10-10: all twelve findings above are fixed in Phase 2 of
 `docs/IMPROVEMENT_PLAN.md`, each with a regression test.
 
+Correction 2026-10-21 (`docs/DOCUMENTATION_ALIGNMENT_AUDIT.md`): two of these
+were reopened. Finding 11's bad-path crash was still present (the `cd` had
+moved to line 122) and was fixed in PR #7. Finding 8 had only been
+documented in help text; Phase 1 of the alignment plan made `build units`,
+`build show`, and `analyze` name the discovered configurations.
+
 ### Complexity
 
 `MarkdownReportRenderer` is 791 lines and `SQLiteAnalysisStorage` is 777.

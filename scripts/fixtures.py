@@ -292,7 +292,7 @@ def apply_operation(fixtures: list[Fixture], operation: str, options: argparse.N
                 verbose=options.verbose,
                 output_dir=options.output_dir,
             )
-            fixture.execute(operation, context)
+            _execute(fixture, operation, context)
         except (FixtureError, RuntimeError, subprocess.TimeoutExpired, OSError) as error:
             failures.append(fixture.name)
             print(f"  FAILED: {error}", file=sys.stderr)
@@ -301,6 +301,25 @@ def apply_operation(fixtures: list[Fixture], operation: str, options: argparse.N
         return 1
     print(f"\n{operation} completed successfully.")
     return 0
+
+
+def _execute(fixture: Fixture, operation: str, context: FixtureContext) -> None:
+    """Run one operation; ``verify`` always works on a disposable copy.
+
+    Self-checks may build or regenerate files (the complex fixture's
+    verify_fixture.py rewrites expected/sample_inputs/), and committed
+    fixture files must never change. To refresh those samples on purpose,
+    run the fixture's own tool directly. The copy is exact apart from
+    bytecode caches, so checks for stray state still see it.
+    """
+    if operation != "verify":
+        fixture.execute(operation, context)
+        return
+    with context.copy_to_tempdir(("__pycache__",)) as copy:
+        print(f"  verify: running on a copy at {copy}")
+        fixture.execute(
+            operation, dataclasses.replace(context, fixture_root=copy)
+        )
 
 
 def command_list(fixtures: list[Fixture]) -> int:

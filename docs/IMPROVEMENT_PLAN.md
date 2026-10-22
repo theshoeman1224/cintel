@@ -147,6 +147,13 @@ Landed, each with a regression test:
 Verification: 272 tests pass (220 unit, 52 integration), ruff and mypy clean,
 `tests/fixtures/complex_c_project` untouched.
 
+Correction 2026-10-21: two items were reopened by
+`docs/DOCUMENTATION_ALIGNMENT_AUDIT.md`. The `start.sh` bad-path crash
+(CODEBASE_AUDIT finding 11) was still present and was fixed in PR #7. The
+`--build-config` default (finding 8) had only been documented; alignment
+Phase 1 made `build units`, `build show`, and `analyze` name the discovered
+configurations.
+
 ## Phase 3: complexity reduction
 
 Status: complete (2026-10-10)
@@ -287,13 +294,14 @@ conflicts=0. Reports, context packages, and the normalized database dump are
 byte-identical to a pre-change snapshot after normalizing workspace paths,
 timestamps, discovery durations, and the self-referential inventory report
 hashes. The SonarCloud scan that confirms the 28 closed and 4 remaining
-issues runs from the pushed branch; the working tree was left uncommitted for
-review.
+issues runs from the pushed branch. The work was committed as `3a269bf`.
 
 ## Definition of done
 
-All six phases landed on 2026-10-10. Suite green throughout, fixture
-untouched, ruff and mypy clean at 275 tests. The two mega-classes are split by
+All seven phases (0–6) landed by 2026-10-10. Suite green throughout, fixture
+untouched, ruff and mypy clean at 297 tests after Phase 6 (275 after Phase 5).
+Two findings from Phase 2 were later reopened and fixed; see the correction
+note in `docs/CODEBASE_AUDIT.md` and `docs/DOCUMENTATION_ALIGNMENT_AUDIT.md`. The two mega-classes are split by
 job, failure paths are covered by tests, the CLI redesign direction is written
 down in `docs/CLI_REDESIGN_BRIEF.md`, and the module-level documentation is
 enough for an agent to navigate without reading every file.

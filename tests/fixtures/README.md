@@ -22,9 +22,13 @@ python scripts/fixtures.py run complex_c_project     # full end-to-end lifecycle
 documented `cintel` CLI flow (`init`, `doctor`, `scan`, `build discover`,
 `analyze`, `report`), and validates the repository, build, and analysis reports
 against the fixture's expected findings. Committed fixture sources are never
-modified; only gitignored artifacts (`build/`, `generated/`) are produced in
-place, and only by the `setup` and `verify` operations. The test suite works on
-temporary copies and asserts that the committed fixture is left untouched.
+modified. Only the `setup` operation produces gitignored artifacts (`build/`,
+`generated/`) in place. `verify` runs each fixture's self-check on an exact
+temporary copy (bytecode caches excepted), because self-checks may build or
+regenerate files. The complex fixture's `tools/verify_fixture.py` rewrites
+`expected/sample_inputs/`, for example. To refresh those samples on purpose,
+run that tool directly. The test suite also works on temporary copies and
+asserts that the committed fixture is left untouched.
 
 Useful flags for `setup`/`verify`/`clean`/`run`:
 

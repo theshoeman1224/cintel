@@ -184,7 +184,9 @@ Landed as:
   instead of implying build state is always absent. Covered by
   `test_markdown_labels_build_awareness_as_scan_scoped`.
 - `list_build_configurations` stays as a declared port seam, noted as
-  reserved in the roadmap's architecture table.
+  reserved in the roadmap's architecture table. (Historical: it has since
+  gained callers in the scanning, build discovery, analysis, and report
+  services, so it is no longer reserved.)
 
 ## Documentation and script sync checklist (per phase)
 

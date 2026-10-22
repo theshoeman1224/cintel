@@ -1,7 +1,8 @@
 # Legacy C Code Intelligence: Current Capabilities and MVP Roadmap
 
-- Audit date: 2026-08-10, re-verified 2026-08-30
-- Audited base revision: `83294e9` (`main`); Phase 5B landed on `main`
+- Audit date: 2026-08-10, last re-verified 2026-10-21
+- Audited base revision: `9c8ed49` (branch `align/plan-phases-1-5`, the
+  documentation alignment phases on top of `main` at `1c5254b`)
 - Implemented vertical slices: Phases 1–4, Phase 5A foundation, the
   Phase 5B source-analysis workflow and resolution, and Phase 6
   (query commands, function context packages, report families)
@@ -19,10 +20,10 @@ SQLite, and guide a user through supplying missing build evidence.
 Phase 5A adds a conservative parser that extracts includes, macros, function
 definitions and declarations, basic named types, typedefs, file-scope
 variables, direct-call candidates from function bodies, and same-file
-variable usages. Schema version 6 stores those symbols, include relationships,
-parser diagnostics, and per-file or per-compilation-unit analysis state, with
-denormalized query-projection columns added for Phase 6 symbol and
-call-graph queries.
+variable usages. Schema version 5 added storage for those symbols, include
+relationships, parser diagnostics, and per-file or per-compilation-unit
+analysis state; Phase 6's schema version 6 added denormalized
+query-projection columns for the symbol and call-graph queries.
 
 Phase 5B adds `cintel analyze`: an application service that parses scanned
 files and build-aware compilation units with incremental reuse by source
@@ -55,9 +56,9 @@ PYTHONPATH=src python3 -m cintel --help
 PYTHONPATH=src python3 -m cintel build --help
 ```
 
-Result (re-verified 2026-10-10 after the Phase 4 documentation pass):
+Result (re-verified 2026-10-21 after the documentation alignment phases):
 
-- 275 tests passed: 223 unit and 52 integration, including the live complex
+- 318 tests passed: 256 unit and 62 integration, including the live complex
   fixture build, the cleanup-effort safety nets, the analysis workflow tests,
   the Phase 6 query, context, report, and migration suites, the CLI contract
   suite, the architecture and documentation import checks, the renderer,
@@ -100,7 +101,7 @@ Result (re-verified 2026-10-10 after the Phase 4 documentation pass):
   compiler argument handling, multiple build configurations, generated-input
   guidance, all six artifact validators, artifact staleness, resumability, and
   mandatory analysis findings validated against the Phase 6 JSON reports
-  (28 passed, 0 missing, 4 heuristic, 2 unsupported by design).
+  (29 passed, 0 missing, 4 heuristic, 2 unsupported by design).
 - A parser smoke test processed all 37 C/header files in the complex fixture
   without crashing.
 - The `start.sh` first run now also executes `cintel setup` (failure-tolerant,
@@ -121,15 +122,15 @@ or `PYTHONPATH=src` when run directly from a fresh checkout.
 | Area | Status | Current implementation |
 |---|---|---|
 | Domain models | Implemented for current and planned MVP concepts | Immutable dataclasses and enums cover repositories, files, builds, compiler invocations, symbols, relationships, capabilities, diagnostics, artifacts, workflow state, commands, and context packages. |
-| Application services | Implemented for Phases 1–5B | Initialization, doctor, scanning, Make discovery, guided recovery, and source analysis are orchestrated outside the CLI. |
+| Application services | Implemented for Phases 1–6 | Initialization, doctor, scanning, Make discovery, guided recovery, source analysis, symbol queries, context packages, and reports are orchestrated outside the CLI. Queries and reports read the latest `analyze` run's scope (`application/analysis_scope.py`). |
 | Ports | Implemented | Protocols exist for command execution, build discovery, compiler behavior, source parsing, storage, report rendering, guidance, artifacts, and AI. |
 | Command adapter | Implemented | Standard-library subprocess execution uses argument lists, `shell=False`, explicit working directories, environment overrides, timeout, output destination, and risk metadata. |
 | Make adapter | Implemented | GNU Make command creation, dry-run capture/import, directory tracking, command splitting, and compiler-command discovery are isolated here. |
 | Compiler adapters | Partially implemented | GCC-style argument parsing and compiler version lookup exist. General GCC capability probing and enrichment do not. |
 | Repository adapter | Implemented | Filesystem discovery, exclusions, hashing, metadata, and incremental hash reuse exist. |
 | Source parser adapter | Phase 5A/5B implemented | The conservative parser implements offset-preserving masking plus symbol, call-candidate, and variable-usage extraction behind `SourceParser`; `SourceAnalysisService` orchestrates it with incremental reuse and deterministic resolution. |
-| SQLite adapter | Implemented through Phase 5A | Schema version 6 keeps the Phase 1–5 state plus source-analysis runs, symbols, and relationships, and adds denormalized query-projection columns (repository/file identity, definition flags, caller/callee ids and spellings) with matching indexes so Phase 6 queries run in SQL. Migrations backfill the projections from stored payloads. The adapter is now a package of per-aggregate stores (repository, build, analysis, workflow) behind one facade with an unchanged public surface. |
-| Report adapters | Implemented | Markdown and JSON renderers cover the repository inventory (with persisted build state), build selection, compilation units, function index, call graph, include index, diagnostics index, capability index, and the Markdown recovery guidance. Each Markdown family renders in its own module under `adapters/reports/markdown/`; the JSON renderer stays in one module. All families dispatch on report name and reject unsupported names. |
+| SQLite adapter | Implemented through Phase 6 | Schema version 6 keeps the Phase 1–5 state plus source-analysis runs, symbols, and relationships, and adds denormalized query-projection columns (repository/file identity, definition flags, caller/callee ids and spellings) with matching indexes so Phase 6 queries run in SQL. Migrations backfill the projections from stored payloads. The adapter is now a package of per-aggregate stores (repository, build, analysis, workflow) behind one facade with an unchanged public surface. |
+| Report adapters | Implemented | Markdown and JSON renderers cover the repository inventory (with persisted build state), build selection, compilation units, function index, symbol index, call graph, include index, global usage, diagnostics index, capability index, and the Markdown recovery guidance. Each Markdown family renders in its own module under `adapters/reports/markdown/`; the JSON renderer stays in one module. All families dispatch on report name and reject unsupported names. |
 | AI adapter | Implemented as disabled | The deterministic core does not depend on AI. Requests to generate AI content fail explicitly. |
 | Composition root | Implemented | Dependencies are constructed in `composition.py`; there are no global service instances. |
 
@@ -445,7 +446,9 @@ The codebase currently emits stable codes in these families:
 - `CI-INPUT-001` through `CI-INPUT-003`; and
 - `CI-PARSE-001`; and
 - `CI-ANLZ-001`; and
-- `CI-GEN-001`.
+- `CI-GEN-001`; and
+- `CI-CONF-001` (a configuration setting that has no effect, currently
+  `[ai] enabled = true`).
 
 All identifiers are defined once as the `DiagnosticCode` enumeration in
 `cintel.domain.diagnostics`; the string values are the public contract.

@@ -41,7 +41,7 @@ init -> doctor -> scan -> build discover (or resume with evidence) -> analyze ->
 - `scan` is safe to re-run; file hashes are reused when size and mtime match.
 - `build discover` runs `make -n -B` or imports validated evidence, and caches on the input fingerprint.
 - `analyze` reparses only changed targets, keyed on source hash, compilation-unit fingerprint, and parser version.
-- `symbols`, `show function`, `callers`, `callees`, `context function`, and `report` read persisted state only, limited to the latest `analyze` run's scope (`application/analysis_scope.py`). `report` also re-scans to refresh the inventory.
+- `symbols`, `show function`, `callers`, `callees`, `context function`, and `report` read persisted state only, limited to the latest `analyze` run's scope (`application/analysis_scope.py`). `report` also re-scans to refresh the inventory and creates the workspace if needed; the query commands and `build units`/`build show` never create one and exit 1 with an init hint instead.
 - Exit codes: 0 success, 1 empty query result, 2 error.
 
 ## Invariants
@@ -73,4 +73,7 @@ python scripts/fixtures.py run complex_c_project       # fixture bootstrap and v
 - `docs/IMPROVEMENT_PLAN.md`: phased work with status per phase.
 - `docs/CODEBASE_AUDIT.md`: findings with file:line evidence.
 - `docs/CURRENT_CAPABILITIES_AND_MVP_ROADMAP.md`: what works today and what is next.
+- `docs/DOCUMENTATION_ALIGNMENT_AUDIT.md`: code, script, and doc drift findings with a status per finding.
+- `docs/CLI_REDESIGN_BRIEF.md`: proposed CLI redesign (status command, JSON envelope); mostly not started.
+- `docs/REFACTOR_PLAN.md`: completed refactor plan; historical.
 - `README.md`: user-facing setup and command reference.

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from cintel.application.doctor import DoctorService
@@ -93,3 +94,50 @@ class DoctorTests(unittest.TestCase):
         self.assertTrue(
             any("cintel setup" in action for action in report.recommended_actions)
         )
+
+    def test_recommends_init_only_without_a_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Makefile").write_text("all:\n\t@true\n", encoding="utf-8")
+            config = default_config(root)
+            service = DoctorService(SuccessfulFakeRunner())
+
+            report = service.inspect(config)
+            self.assertTrue(
+                any("cintel init" in item for item in report.recommended_actions)
+            )
+
+            output = Path(config.output_directory)
+            output.mkdir(parents=True)
+            (output / "config.toml").write_text("", encoding="utf-8")
+            report = service.inspect(config)
+            self.assertFalse(
+                any("cintel init" in item for item in report.recommended_actions)
+            )
+            self.assertTrue(
+                any("cintel" in item and "scan" in item for item in report.recommended_actions)
+            )
+
+    def test_gcc_enrichment_is_not_claimed_available(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = DoctorService(SuccessfulFakeRunner()).inspect(
+                default_config(Path(directory))
+            )
+        gcc_tool = next(item for item in report.tools if item.name == "gcc")
+        self.assertTrue(gcc_tool.available)
+        capability = next(
+            item for item in report.capabilities if item.name == "gcc_enrichment"
+        )
+        self.assertEqual(CapabilityStatus.UNAVAILABLE, capability.status)
+        self.assertIn("not implemented", capability.reason)
+
+    def test_enabled_ai_setting_is_reported_as_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = replace(default_config(Path(directory)), ai_enabled=True)
+            report = DoctorService(SuccessfulFakeRunner()).inspect(config)
+        diagnostic = next(
+            item for item in report.diagnostics if item.code == "CI-CONF-001"
+        )
+        self.assertEqual("warning", diagnostic.severity.value)
+        self.assertIn("not implemented", diagnostic.message)
+

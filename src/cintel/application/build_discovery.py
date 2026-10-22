@@ -166,6 +166,19 @@ class BuildDiscoveryService:
                 repository_id, build_configuration_name
             )
 
+    def configuration_names(self, app_config: AppConfig) -> tuple[str, ...]:
+        """Names of every discovered build configuration, sorted."""
+        repository_id = stable_repository_id(app_config.repository_root)
+        with storage_session(self._storage_factory, app_config.database_path) as storage:
+            return tuple(
+                sorted(
+                    {
+                        item.name
+                        for item in storage.list_build_configurations(repository_id)
+                    }
+                )
+            )
+
     def show_source(
         self,
         app_config: AppConfig,

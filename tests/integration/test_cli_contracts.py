@@ -127,6 +127,7 @@ class CLIContractTests(unittest.TestCase):
     def test_symbols_before_analyze_exits_no_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            _run("init", str(root))
             code, stdout, _ = _run("--repository", str(root), "symbols")
             self.assertEqual(1, code)
             self.assertIn("No symbols found.", stdout)
@@ -135,6 +136,7 @@ class CLIContractTests(unittest.TestCase):
     def test_context_before_analyze_exits_no_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            _run("init", str(root))
             code, stdout, _ = _run(
                 "--repository", str(root), "context", "function", "no_such_function"
             )
@@ -145,6 +147,7 @@ class CLIContractTests(unittest.TestCase):
     def test_build_units_before_discovery_exits_no_match_with_hint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            _run("init", str(root))
             code, stdout, _ = _run("--repository", str(root), "build", "units")
             self.assertEqual(1, code)
             self.assertIn("No compilation units found.", stdout)
@@ -197,6 +200,7 @@ class CLIContractTests(unittest.TestCase):
     def test_callers_unknown_function_reports_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            _run("init", str(root))
             code, stdout, _ = _run(
                 "--repository", str(root), "callers", "no_such_function"
             )
@@ -286,6 +290,127 @@ class CLIContractTests(unittest.TestCase):
                 )
             self.assertIn("Make evaluation command:", stderr)
             self.assertIn("may evaluate", stderr)
+
+    def test_interactive_build_discover_previews_once(self) -> None:
+        class _Terminal(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                mock.patch("sys.stdin", _Terminal()),
+                mock.patch("builtins.input", return_value="n"),
+            ):
+                code, _, stderr = _run(
+                    "--repository", str(root), "build", "discover"
+                )
+        self.assertEqual(2, code)
+        self.assertEqual(1, stderr.count("Make evaluation command:"))
+        self.assertEqual(1, stderr.count("may evaluate"))
+        self.assertIn("Build discovery cancelled.", stderr)
+
+    def test_missing_build_configuration_names_the_discovered_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            (root / "src").mkdir(parents=True)
+            (root / "src" / "main.c").write_text(
+                "int main(void) { return 0; }\n", encoding="utf-8"
+            )
+            (root / "Makefile").write_text("all:\n\tgcc -c src/main.c\n", encoding="utf-8")
+            evidence = Path(directory) / "dry-run.txt"
+            evidence.write_text("gcc -c src/main.c -o main.o\n", encoding="utf-8")
+            base = ["--repository", str(root)]
+            _run("init", str(root))
+            code, stdout, _ = _run(
+                *base, "--build-config", "debug", "--makefile", "Makefile",
+                "--non-interactive", "--input-file", str(evidence),
+                "build", "discover",
+            )
+            self.assertEqual(0, code, stdout)
+
+            code, stdout, _ = _run(*base, "build", "units")
+            self.assertEqual(1, code)
+            self.assertIn("`default`", stdout)
+            self.assertIn("Discovered configurations: debug", stdout)
+
+            code, stdout, _ = _run(*base, "build", "show", "src/main.c")
+            self.assertEqual(1, code)
+            self.assertIn("Discovered configurations: debug", stdout)
+
+            code, stdout, _ = _run(*base, "--json", "analyze")
+            self.assertEqual(0, code, stdout)
+            summary = json.loads(stdout)
+            messages = [item["message"] for item in summary["diagnostics"]]
+            self.assertTrue(
+                any("`default`" in item and "debug" in item for item in messages),
+                messages,
+            )
+
+            code, stdout, _ = _run(*base, "--build-config", "debug", "--json", "analyze")
+            self.assertEqual(0, code, stdout)
+            self.assertEqual([], json.loads(stdout)["diagnostics"])
+
+    def test_read_only_commands_do_not_create_a_workspace(self) -> None:
+        commands = {
+            ("symbols",): "cintel analyze",
+            ("show", "function", "main"): "cintel analyze",
+            ("callers", "main"): "cintel analyze",
+            ("callees", "main"): "cintel analyze",
+            ("context", "function", "main"): "cintel analyze",
+            ("build", "units"): "cintel build discover",
+            ("build", "show", "main.c"): "cintel build discover",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for arguments, next_step in commands.items():
+                code, stdout, _ = _run("--repository", str(root), *arguments)
+                self.assertEqual(1, code, arguments)
+                self.assertIn("No cintel workspace", stdout, arguments)
+                self.assertIn("cintel init", stdout, arguments)
+                self.assertIn(next_step, stdout, arguments)
+            code, stdout, _ = _run("--repository", str(root), "--json", "symbols")
+            self.assertEqual(1, code)
+            self.assertEqual(
+                "WorkspaceNotFound", json.loads(stdout)["error"]["type"]
+            )
+            self.assertFalse((root / ".code-intelligence").exists())
+
+    def test_verbose_reports_configuration_source_and_timing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, _, stderr = _run("--repository", str(root), "--verbose", "doctor")
+            self.assertIn("cintel: configuration: built-in defaults", stderr)
+            self.assertRegex(stderr, r"cintel: doctor finished in \d+\.\d+s")
+
+            _run("init", str(root))
+            config = root / ".code-intelligence" / "config.toml"
+            _, _, stderr = _run("--repository", str(root), "--verbose", "scan")
+            self.assertIn(f"cintel: configuration: {config}", stderr)
+            self.assertRegex(stderr, r"cintel: scan finished in \d+\.\d+s")
+
+            _, _, stderr = _run("--config", str(config), "--verbose", "build", "units")
+            self.assertIn("(from --config)", stderr)
+            self.assertRegex(stderr, r"cintel: build units finished in")
+
+            _, _, stderr = _run("--repository", str(root), "scan")
+            self.assertNotIn("cintel:", stderr)
+
+    def test_enabled_ai_setting_warns_that_it_has_no_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _run("init", str(root))
+            config = root / ".code-intelligence" / "config.toml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    "enabled = false", "enabled = true"
+                ),
+                encoding="utf-8",
+            )
+            _, _, stderr = _run("--repository", str(root), "scan")
+            self.assertIn("[ai] enabled = true has no effect", stderr)
+            code, stdout, _ = _run("--repository", str(root), "doctor")
+            self.assertIn("CI-CONF-001", stdout)
 
 
 if __name__ == "__main__":
